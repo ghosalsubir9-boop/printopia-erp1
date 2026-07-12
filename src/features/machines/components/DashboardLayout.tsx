@@ -38,7 +38,8 @@ import {
   Dashboard as DashboardIcon,
   VerifiedUser as UserIcon,
   Sync as SyncIcon,
-  PowerSettingsNew as PowerIcon
+  PowerSettingsNew as PowerIcon,
+  Layers as LayersIcon
 } from '@mui/icons-material';
 import { ThemeProvider, createTheme } from '@mui/material/styles';
 
@@ -46,9 +47,11 @@ const DRAWER_WIDTH = 260;
 
 interface DashboardLayoutProps {
   children: React.ReactNode;
+  activeModule?: 'machines' | 'papers' | 'products' | 'customers';
+  onModuleChange?: (module: 'machines' | 'papers' | 'products' | 'customers') => void;
 }
 
-export default function DashboardLayout({ children }: DashboardLayoutProps) {
+export default function DashboardLayout({ children, activeModule = 'machines', onModuleChange }: DashboardLayoutProps) {
   // Light/Dark mode state
   const [darkMode, setDarkMode] = useState<boolean>(() => {
     const saved = localStorage.getItem('printopia_dark_mode');
@@ -167,9 +170,11 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
   // Navigation Links definition
   const navItems = [
     { text: 'ERP Dashboard', icon: <DashboardIcon />, disabled: true, tag: 'Coming Soon' },
-    { text: 'Machine Master (M-01)', icon: <BuildIcon />, active: true, tag: 'Active' },
+    { text: 'Machine Master (M-01)', icon: <BuildIcon />, active: activeModule === 'machines', tag: activeModule === 'machines' ? 'Active' : undefined, id: 'machines' },
+    { text: 'Paper Master (M-02)', icon: <InventoryIcon />, active: activeModule === 'papers', tag: activeModule === 'papers' ? 'Active' : undefined, id: 'papers' },
+    { text: 'Product Master (M-03)', icon: <LayersIcon />, active: activeModule === 'products', tag: activeModule === 'products' ? 'Active' : undefined, id: 'products' },
+    { text: 'Customer Master (M-04)', icon: <UserIcon />, active: activeModule === 'customers', tag: activeModule === 'customers' ? 'Active' : undefined, id: 'customers' },
     { text: 'Estimation Engine', icon: <CalcIcon />, disabled: true },
-    { text: 'Paper Inventory', icon: <InventoryIcon />, disabled: true },
     { text: 'Job Ticketing (CTP)', icon: <ReceiptIcon />, disabled: true },
     { text: 'Global Rates Setup', icon: <SettingsIcon />, disabled: true }
   ];
@@ -203,6 +208,11 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
                 <Box sx={{ width: '100%' }}>
                   <ListItemButton
                     disabled={item.disabled}
+                    onClick={() => {
+                      if (!item.disabled && onModuleChange && item.id) {
+                        onModuleChange(item.id as 'machines' | 'papers' | 'products');
+                      }
+                    }}
                     sx={{
                       borderRadius: '8px',
                       py: 1,
@@ -292,7 +302,13 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
             {/* Title / Section Name */}
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
               <Typography variant="h6" sx={{ fontSize: '1rem', fontWeight: 800, tracking: '-0.2px' }}>
-                Module-01: Machine Master Configuration
+                {activeModule === 'customers'
+                  ? 'Module-04: Customer Master CRM Configuration'
+                  : activeModule === 'products' 
+                    ? 'Module-03: Product Master Configuration' 
+                    : activeModule === 'papers' 
+                      ? 'Module-02: Paper Master Configuration' 
+                      : 'Module-01: Machine Master Configuration'}
               </Typography>
               <Chip label="Ready for PostgreSQL" size="small" color="success" variant="outlined" sx={{ display: { xs: 'none', sm: 'inline-flex' }, height: 20, fontSize: '0.65rem' }} />
             </Box>

@@ -15,8 +15,9 @@ import {
   CardContent,
   Snackbar,
   Alert,
-  Slide,
-  Button
+  Button,
+  CircularProgress,
+  LinearProgress
 } from '@mui/material';
 import {
   NavigateNext as NavigateNextIcon,
@@ -24,28 +25,17 @@ import {
   TrendingUp as SpeedIcon,
   Layers as ColorsIcon,
   Storage as DbIcon,
-  ArrowBack as ArrowBackIcon
+  ArrowBack as ArrowBackIcon,
+  Sync as SyncIcon
 } from '@mui/icons-material';
 import { MachineMasterItem } from '../types';
-import { initialMachineMasterItems } from '../seedData';
+import { MachineApiService } from '../services/api';
 import MachineTable from './MachineTable';
 import MachineForm from './MachineForm';
 
-const STORAGE_KEY = 'printopia_machine_master_registry';
-
 export default function MachineMaster() {
-  const [machines, setMachines] = useState<MachineMasterItem[]>(() => {
-    const saved = localStorage.getItem(STORAGE_KEY);
-    if (saved) {
-      try {
-        return JSON.parse(saved);
-      } catch (e) {
-        console.error('Error parsing stored machine master items:', e);
-      }
-    }
-    return initialMachineMasterItems;
-  });
-
+  const [machines, setMachines] = useState<MachineMasterItem[]>([]);
+  const [isLoading, setIsLoading] = useState<boolean>(true);
   const [currentView, setCurrentView] = useState<'list' | 'add' | 'edit'>('list');
   const [selectedMachine, setSelectedMachine] = useState<MachineMasterItem | null>(null);
 
@@ -56,10 +46,22 @@ export default function MachineMaster() {
     severity: 'success'
   });
 
-  // Save changes back to localStorage
+  // Load machines from the API service on mount
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(machines));
-  }, [machines]);
+    fetchMachines();
+  }, []);
+
+  const fetchMachines = async () => {
+    setIsLoading(true);
+    try {
+      const data = await MachineApiService.getMachines();
+      setMachines(data);
+    } catch (e: any) {
+      showToast(`Error fetching machine registry: ${e.message}`, 'error');
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   const showToast = (message: string, severity: 'success' | 'info' | 'warning' | 'error' = 'success') => {
     setToast({ open: true, message, severity });
@@ -79,26 +81,72 @@ export default function MachineMaster() {
     setCurrentView('edit');
   };
 
-  const handleDeleteMachine = (id: string) => {
-    const machineToDelete = machines.find((m) => m.id === id);
-    setMachines((prev) => prev.filter((m) => m.id !== id));
-    showToast(
-      `Machine '${machineToDelete?.machineName || id}' successfully removed from the active registry.`,
-      'warning'
-    );
+  const handleDeleteMachine = async (id: string) => {
+    setIsLoading(true);
+    try {
+      const target = machines.find((m) => m.id === id);
+      await MachineApiService.deleteMachine(id);
+      setMachines((prev) => prev.filter((m) => m.id !== id));
+      showToast(
+        `Machine '${target?.machineName || id}' successfully decommissioned from the active registry.`,
+        'warning'
+      );
+    } catch (e: any) {
+      showToast(`Error deleting machine: ${e.message}`, 'error');
+    } finally {
+      setIsLoading(false);
+    }
   };
 
-  const handleSaveMachine = (newOrUpdatedMachine: MachineMasterItem) => {
-    if (currentView === 'edit') {
-      setMachines((prev) =>
-        prev.map((m) => (m.id === newOrUpdatedMachine.id ? newOrUpdatedMachine : m))
-      );
-      showToast(`Machine '${newOrUpdatedMachine.machineName}' specifications successfully updated!`, 'success');
-    } else {
-      setMachines((prev) => [newOrUpdatedMachine, ...prev]);
-      showToast(`New machine '${newOrUpdatedMachine.machineName}' registered in active service catalog!`, 'success');
+  const handleSaveMachine = async (newOrUpdatedMachine: MachineMasterItem) => {
+    setIsLoading(true);
+    try {
+      if (currentView === 'edit') {
+        const updated = await MachineApiService.updateMachine(newOrUpdatedMachine.id, newOrUpdatedMachine);
+        setMachines((prev) =>
+          prev.map((m) => (m.id === updated.id ? updated : m))
+        );
+        showToast(`Machine '${updated.machineName}' specifications successfully updated!`, 'success');
+      } else {
+        // Create machine expects Omit<Machine, 'id' | 'createdAt' | 'updatedAt'>
+        const { id, createdAt, updatedAt, ...creationParams } = newOrUpdatedMachine;
+        const created = await MachineApiService.createMachine(creationParams);
+        setMachines((prev) => [created, ...prev]);
+        showToast(`New machine '${created.machineName}' registered in active service catalog!`, 'success');
+      }
+      setCurrentView('list');
+    } catch (e: any) {
+      showToast(`Error saving specifications: ${e.message}`, 'error');
+    } finally {
+      setIsLoading(false);
     }
-    setCurrentView('list');
+  };
+
+  // Bulk import callback handler
+  const handleImportSuccess = async (importedMachines: MachineMasterItem[]) => {
+    setIsLoading(true);
+    try {
+      const updatedList = [...machines];
+      
+      for (const m of importedMachines) {
+        try {
+          const { id, createdAt, updatedAt, ...creationParams } = m;
+          const created = await MachineApiService.createMachine(creationParams);
+          updatedList.unshift(created);
+        } catch (err) {
+          // If code exists, skip or print warning
+          console.warn(`Skipping duplicate code ${m.machineCode}`);
+        }
+      }
+      
+      // Refresh current list after updates
+      const refreshed = await MachineApiService.getMachines();
+      setMachines(refreshed);
+    } catch (e: any) {
+      showToast(`Bulk import synchronization failed: ${e.message}`, 'error');
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const handleCancelForm = () => {
@@ -121,7 +169,21 @@ export default function MachineMaster() {
   }, [machines]);
 
   return (
-    <Box sx={{ flexGrow: 1 }}>
+    <Box sx={{ flexGrow: 1, position: 'relative' }}>
+      {/* Top linear progress during sync */}
+      {isLoading && (
+        <LinearProgress 
+          sx={{ 
+            position: 'absolute', 
+            top: -32, 
+            left: -32, 
+            right: -32, 
+            height: 4, 
+            zIndex: 10 
+          }} 
+        />
+      )}
+
       {/* Header and Breadcrumbs */}
       <Box sx={{ mb: 4, display: 'flex', flexDirection: { xs: 'column', sm: 'row' }, justifyContent: 'space-between', alignItems: { xs: 'flex-start', sm: 'center' }, gap: 2 }}>
         <Box>
@@ -143,25 +205,41 @@ export default function MachineMaster() {
           </Typography>
         </Box>
 
-        {currentView !== 'list' && (
-          <Button
-            id="btn-back-to-list"
-            variant="outlined"
-            startIcon={<ArrowBackIcon />}
-            onClick={() => setCurrentView('list')}
-            sx={{ textTransform: 'none', fontWeight: 'bold' }}
-          >
-            Back to Registry List
-          </Button>
-        )}
+        <Box sx={{ display: 'flex', gap: 1.5 }}>
+          {currentView === 'list' && (
+            <Button
+              id="btn-sync-api"
+              variant="outlined"
+              color="primary"
+              size="small"
+              startIcon={<SyncIcon />}
+              onClick={fetchMachines}
+              disabled={isLoading}
+              sx={{ textTransform: 'none', fontWeight: 'bold' }}
+            >
+              Sync DB
+            </Button>
+          )}
+          {currentView !== 'list' && (
+            <Button
+              id="btn-back-to-list"
+              variant="outlined"
+              startIcon={<ArrowBackIcon />}
+              onClick={() => setCurrentView('list')}
+              sx={{ textTransform: 'none', fontWeight: 'bold' }}
+            >
+              Back to Registry List
+            </Button>
+          )}
+        </Box>
       </Box>
 
       {/* Stats Cards (Only shown in list view for dashboard context) */}
       {currentView === 'list' && (
         <Grid container spacing={3} sx={{ mb: 4 }}>
           <Grid size={{ xs: 12, sm: 6, md: 3 }}>
-            <Card variant="outlined" sx={{ borderRadius: 2, height: '100%' }}>
-              <CardContent sx={{ display: 'flex', alignItems: 'center', justifyItems: 'space-between' }}>
+            <Card variant="outlined" sx={{ borderRadius: 3, height: '100%' }}>
+              <CardContent sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                 <Box sx={{ flexGrow: 1 }}>
                   <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: 1.2 }}>
                     ACTIVE MACHINERY
@@ -170,58 +248,58 @@ export default function MachineMaster() {
                     {stats.active} <span style={{ fontSize: '1rem', color: '#64748b', fontWeight: 'normal' }}>/ {stats.total} Machines</span>
                   </Typography>
                 </Box>
-                <Box sx={{ p: 1.5, bg: 'success.light', color: 'success.main', borderRadius: 2, display: 'flex' }}>
+                <Box sx={{ p: 1.5, bgcolor: 'rgba(16, 185, 129, 0.1)', color: 'success.main', borderRadius: 2, display: 'flex' }}>
                   <DbIcon />
                 </Box>
               </CardContent>
             </Card>
           </Grid>
           <Grid size={{ xs: 12, sm: 6, md: 3 }}>
-            <Card variant="outlined" sx={{ borderRadius: 2, height: '100%' }}>
+            <Card variant="outlined" sx={{ borderRadius: 3, height: '100%' }}>
               <CardContent sx={{ display: 'flex', alignItems: 'center' }}>
                 <Box sx={{ flexGrow: 1 }}>
-                  <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 'bold' }}>
+                  <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: 1.2 }}>
                     AVG RUNNING SPEED
                   </Typography>
                   <Typography variant="h4" sx={{ fontWeight: 800, mt: 0.5, color: 'primary.main' }}>
                     {stats.avgSpeed.toLocaleString()} <span style={{ fontSize: '0.9rem', color: '#64748b', fontWeight: 'normal' }}>Sheets/Hr</span>
                   </Typography>
                 </Box>
-                <Box sx={{ p: 1.5, bg: 'primary.light', color: 'primary.main', borderRadius: 2, display: 'flex' }}>
+                <Box sx={{ p: 1.5, bgcolor: 'rgba(37, 99, 235, 0.1)', color: 'primary.main', borderRadius: 2, display: 'flex' }}>
                   <SpeedIcon />
                 </Box>
               </CardContent>
             </Card>
           </Grid>
           <Grid size={{ xs: 12, sm: 6, md: 3 }}>
-            <Card variant="outlined" sx={{ borderRadius: 2, height: '100%' }}>
+            <Card variant="outlined" sx={{ borderRadius: 3, height: '100%' }}>
               <CardContent sx={{ display: 'flex', alignItems: 'center' }}>
                 <Box sx={{ flexGrow: 1 }}>
-                  <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 'bold' }}>
+                  <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: 1.2 }}>
                     MAX COLORS CAPACITY
                   </Typography>
                   <Typography variant="h4" sx={{ fontWeight: 800, mt: 0.5, color: 'secondary.main' }}>
-                    {stats.maxColors}C <span style={{ fontSize: '0.9rem', color: '#64748b', fontWeight: 'normal' }}>Offset Coater</span>
+                    {stats.maxColors}C <span style={{ fontSize: '0.9rem', color: '#64748b', fontWeight: 'normal' }}>Offset tower</span>
                   </Typography>
                 </Box>
-                <Box sx={{ p: 1.5, bg: 'secondary.light', color: 'secondary.main', borderRadius: 2, display: 'flex' }}>
+                <Box sx={{ p: 1.5, bgcolor: 'rgba(139, 92, 246, 0.1)', color: 'secondary.main', borderRadius: 2, display: 'flex' }}>
                   <ColorsIcon />
                 </Box>
               </CardContent>
             </Card>
           </Grid>
           <Grid size={{ xs: 12, sm: 6, md: 3 }}>
-            <Card variant="outlined" sx={{ borderRadius: 2, height: '100%' }}>
+            <Card variant="outlined" sx={{ borderRadius: 3, height: '100%' }}>
               <CardContent sx={{ display: 'flex', alignItems: 'center' }}>
                 <Box sx={{ flexGrow: 1 }}>
-                  <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 'bold' }}>
+                  <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: 1.2 }}>
                     PERSISTENCE LAYER
                   </Typography>
                   <Typography variant="h4" sx={{ fontWeight: 800, mt: 0.5, color: 'info.main' }}>
-                    LocalDB <span style={{ fontSize: '0.75rem', color: '#10b981', fontWeight: 'bold', textTransform: 'uppercase' }}>● Active</span>
+                    PostgreSQL <span style={{ fontSize: '0.75rem', color: '#10b981', fontWeight: 'bold', textTransform: 'uppercase' }}>● Sync Ready</span>
                   </Typography>
                 </Box>
-                <Box sx={{ p: 1.5, bg: 'info.light', color: 'info.main', borderRadius: 2, display: 'flex' }}>
+                <Box sx={{ p: 1.5, bgcolor: 'rgba(2, 132, 199, 0.1)', color: 'info.main', borderRadius: 2, display: 'flex' }}>
                   <SettingsIcon />
                 </Box>
               </CardContent>
@@ -230,14 +308,22 @@ export default function MachineMaster() {
         </Grid>
       )}
 
-      {/* Main Panel Content */}
-      <Paper elevation={0} sx={{ border: 'none', background: 'transparent' }}>
-        {currentView === 'list' ? (
+      {/* Main Panel Content with inline spinner overlay */}
+      <Paper elevation={0} sx={{ border: 'none', background: 'transparent', position: 'relative' }}>
+        {isLoading && machines.length === 0 ? (
+          <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', py: 12 }}>
+            <CircularProgress color="primary" sx={{ mb: 2 }} />
+            <Typography variant="body2" color="text.secondary">
+              Synchronizing with Printopia Central DB Registry...
+            </Typography>
+          </Box>
+        ) : currentView === 'list' ? (
           <MachineTable
             machines={machines}
             onEdit={handleEditClick}
             onDelete={handleDeleteMachine}
             onAddClick={handleAddClick}
+            onImportSuccess={handleImportSuccess}
           />
         ) : (
           <MachineForm
