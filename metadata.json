@@ -1,0 +1,6 @@
+{
+  "name": "Printopia ERP",
+  "description": "An enterprise-grade ERP for commercial offset printing presses and hospital/diagnostic printing businesses.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
