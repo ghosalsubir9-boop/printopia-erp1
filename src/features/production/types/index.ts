@@ -67,6 +67,7 @@ export interface JobItem {
   // Link to original quotation option / estimate if possible
   quotationOptionId?: string;
   estimateId?: string;
+  alreadyConverted?: boolean;
   
   // Section C: Planning
   planning: ProductionPlanning;

@@ -39,6 +39,7 @@ export interface LayoutData {
 
 export interface EstimateJob {
   id: string;
+  companyId?: string;
   estimateNumber: string; // Auto-generated
   estimateDate: string; // YYYY-MM-DD
   customerId: string; // links to Customer

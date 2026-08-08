@@ -13,9 +13,10 @@ interface PIModuleProps {
   initialView?: ViewMode;
   initialQuotationData?: QuotationHeader | null;
   onConvertToProduction?: (pi: ProformaInvoice) => void;
+  onCreateProductionOrder?: (pi: ProformaInvoice) => void;
 }
 
-export default function PIModule({ initialView = 'list', initialQuotationData, onConvertToProduction }: PIModuleProps) {
+export default function PIModule({ initialView = 'list', initialQuotationData, onConvertToProduction, onCreateProductionOrder }: PIModuleProps) {
   const [viewMode, setViewMode] = useState<ViewMode>(initialView);
   const [selectedPI, setSelectedPI] = useState<ProformaInvoice | null>(null);
   const [fromQuotation, setFromQuotation] = useState<QuotationHeader | null>(initialQuotationData || null);
@@ -64,14 +65,15 @@ export default function PIModule({ initialView = 'list', initialQuotationData, o
     setError(null);
   };
 
-  const handleConvertToJobCard = (pi: ProformaInvoice) => {
+  const handleCreateProductionOrder = (pi: ProformaInvoice) => {
     const check = PIApiService.canConvertToProduction(pi);
     if (!check.canConvert) {
       setError(check.reason || 'Cannot convert Proforma Invoice to Production.');
       return;
     }
-    if (onConvertToProduction) {
-      onConvertToProduction(pi);
+    const fn = onCreateProductionOrder || onConvertToProduction;
+    if (fn) {
+      fn(pi);
     }
   };
 
@@ -88,7 +90,7 @@ export default function PIModule({ initialView = 'list', initialQuotationData, o
           onCreateNew={handleCreateNew} 
           onViewDetails={handleViewDetails} 
           onEdit={handleEdit} 
-          onConvertToProduction={handleConvertToJobCard}
+          onConvertToProduction={handleCreateProductionOrder}
         />
       )}
 
@@ -106,7 +108,8 @@ export default function PIModule({ initialView = 'list', initialQuotationData, o
           invoice={selectedPI} 
           onBack={handleBack} 
           onEdit={handleEdit}
-          onConvertToJobCard={handleConvertToJobCard}
+          onCreateProductionOrder={handleCreateProductionOrder}
+          onConvertToJobCard={handleCreateProductionOrder}
           onUpdate={handleSave}
         />
       )}

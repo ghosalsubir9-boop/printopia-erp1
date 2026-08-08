@@ -63,6 +63,8 @@ export interface PaperStockItem {
 
 export interface PaperMasterItem {
   id: string;
+  companyId?: string;
+  scope?: 'GLOBAL' | 'TENANT';
   paperName: string;
   paperCode: string; // Unique
   categoryId: string; // Ref to PaperCategory

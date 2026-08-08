@@ -135,19 +135,36 @@ export class ProductionApiService {
    * Helper to initialize a PO from an approved PI
    */
   public static async prepareFromPI(pi: ProformaInvoice): Promise<Omit<ProductionOrder, 'id' | 'poNumber' | 'createdAt' | 'updatedAt'>> {
+    const existingOrders = await this.getOrderByPiId(pi.id);
+    const convertedKeys = new Set<string>();
+
+    existingOrders.forEach(order => {
+      if (order.status !== 'Cancelled') {
+        (order.items || []).forEach(item => {
+          if (item.quotationOptionId) convertedKeys.add(item.quotationOptionId);
+          if (item.productId) convertedKeys.add(item.productId);
+          if (item.id) convertedKeys.add(item.id);
+        });
+      }
+    });
+
     const items: JobItem[] = await Promise.all(pi.items.map(async (piItem) => {
       // Try to find matching estimate if quotationOptionId exists
       let estimateData = null;
       if (piItem.quotationOptionId) {
-        // This is a bit simplified, usually we'd have a direct link or a way to find the estimate
-        // For now, let's assume we can fetch estimates and find one that matches the product and customer
         const estimates = await EstimateApiService.getEstimates({ 
           customerId: pi.customerId,
           searchTerm: piItem.productName
         });
-        // Look for exact product match or recent one
         estimateData = estimates[0]; 
       }
+
+      const isAlreadyConverted = Boolean(
+        (piItem.quotationOptionId && convertedKeys.has(piItem.quotationOptionId)) ||
+        (piItem.quotationItemId && convertedKeys.has(piItem.quotationItemId)) ||
+        (piItem.productId && convertedKeys.has(piItem.productId)) ||
+        (piItem.id && convertedKeys.has(piItem.id))
+      );
 
       const jobItem: JobItem = {
         id: `job-${Math.random().toString(36).substr(2, 9)}`,
@@ -164,6 +181,7 @@ export class ProductionApiService {
         layoutData: piItem.layoutData,
         quotationOptionId: piItem.quotationOptionId,
         estimateId: estimateData?.id,
+        alreadyConverted: isAlreadyConverted,
         planning: {
           parentSheet: estimateData?.parentSheetName || 'N/A',
           ups: estimateData?.ups || 1,

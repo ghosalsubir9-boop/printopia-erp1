@@ -93,18 +93,14 @@ export default function ProductionOrderForm({
   const handlePIChange = async (piId: string) => {
     const pi = approvedPIs.find(p => p.id === piId);
     if (pi) {
-      // Check for existing POs
-      const existingPOs = await ProductionApiService.getOrderByPiId(piId);
-      if (existingPOs.length > 0) {
-        const confirmNew = window.confirm(
-          `A Production Order (${existingPOs[0].poNumber}) already exists for this PI. Do you want to create a NEW Production Order?`
-        );
-        if (!confirmNew) return;
-      }
-
       setLoading(true);
+      setError(null);
       try {
         const draft = await ProductionApiService.prepareFromPI(pi);
+        const hasUnconverted = draft.items.some(item => !item.alreadyConverted);
+        if (!hasUnconverted) {
+          setError('All items in this Proforma Invoice have already been converted to Production Orders.');
+        }
         setFormData(prev => ({
           ...prev,
           ...draft
@@ -145,10 +141,19 @@ export default function ProductionOrderForm({
       setError('Please select a Linked PI Number');
       return;
     }
+
+    const validItems = formData.items?.filter(item => !item.alreadyConverted) || [];
+    if (!initialData && validItems.length === 0) {
+      setError('All items in this Proforma Invoice have already been converted to Production Orders.');
+      return;
+    }
     
     setLoading(true);
     try {
-      const finalData = { ...formData };
+      const finalData = {
+        ...formData,
+        items: initialData ? (formData.items || []) : validItems
+      };
       if (finalData.status === 'Approved') {
         finalData.approvedBy = 'Subir Ghosal';
         finalData.approvedAt = new Date().toISOString();
@@ -326,11 +331,17 @@ export default function ProductionOrderForm({
           <Typography variant="h6" sx={{ mb: 2, fontWeight: 'bold' }}>Job Items & Planning</Typography>
           {formData.items?.map((item, index) => (
             <Accordion key={item.id} defaultExpanded={index === 0} sx={{ mb: 2, borderRadius: 2, '&:before': { display: 'none' }, overflow: 'hidden' }}>
-              <AccordionSummary expandIcon={<ExpandMoreIcon />} sx={{ bgcolor: 'action.hover' }}>
+              <AccordionSummary expandIcon={<ExpandMoreIcon />} sx={{ bgcolor: item.alreadyConverted ? 'action.selected' : 'action.hover' }}>
               <Box sx={{ display: 'flex', gap: 2, alignItems: 'center', width: '100%' }}>
-                  <Typography sx={{ fontWeight: 'bold' }}>Job-{String(index + 1).padStart(2, '0')} : {item.productName}</Typography>
+                  <Typography sx={{ fontWeight: 'bold', textDecoration: item.alreadyConverted ? 'line-through' : 'none' }}>
+                    Job-{String(index + 1).padStart(2, '0')} : {item.productName}
+                  </Typography>
                   <Chip label={`${item.quantity} Qty`} size="small" variant="outlined" />
-                  {item.estimateId && <Chip label="Planning Imported" size="small" color="success" variant="outlined" />}
+                  {item.alreadyConverted ? (
+                    <Chip label="Already Converted" size="small" color="error" sx={{ fontWeight: 'bold' }} />
+                  ) : (
+                    item.estimateId && <Chip label="Planning Imported" size="small" color="success" variant="outlined" />
+                  )}
                 </Box>
               </AccordionSummary>
               <AccordionDetails sx={{ p: 0 }}>

@@ -117,14 +117,6 @@ export default function PIList({ onCreateNew, onViewDetails, onEdit, onConvertTo
             Manage your proforma invoices and payments
           </Typography>
         </Box>
-        <Button
-          variant="contained"
-          startIcon={<AddIcon />}
-          onClick={onCreateNew}
-          sx={{ borderRadius: 3, px: 3, py: 1.5, fontWeight: 'bold', textTransform: 'none', boxShadow: 3 }}
-        >
-          Create Proforma Invoice
-        </Button>
       </Box>
 
       <Card sx={{ borderRadius: 4, overflow: 'hidden', boxShadow: '0 4px 20px rgba(0,0,0,0.05)' }}>

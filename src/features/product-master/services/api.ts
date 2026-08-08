@@ -13,6 +13,7 @@ import {
   SpecialProductOptions,
   PostgreSQLSchema
 } from '../types';
+import { AuthService } from '../../../services/authService';
 
 // Helper to simulate network latency
 const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -411,6 +412,12 @@ export class ProductApiService {
   }): Promise<ProductMasterItem[]> {
     await delay(350);
     let products = this.getStored<ProductMasterItem>(KEYS.PRODUCTS, initialProducts);
+    const currentCompanyId = AuthService.getCurrentCompanyId();
+
+    // Multi-tenant filter: global scope OR matching companyId OR legacy items without companyId
+    products = products.filter(
+      (p) => p.scope === 'GLOBAL' || !p.companyId || p.companyId === currentCompanyId
+    );
 
     // Rule 5: Automatically assign/migrate product codes for existing products
     let modified = false;
@@ -517,9 +524,12 @@ export class ProductApiService {
       throw new Error(`Product Code '${finalCode}' is already registered in the registry.`);
     }
 
+    const currentCompanyId = AuthService.getCurrentCompanyId();
     const newProduct: ProductMasterItem = {
       ...product,
       id: `prod-${Date.now()}`,
+      companyId: product.companyId || currentCompanyId,
+      scope: product.scope || 'TENANT',
       productCode: finalCode,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),

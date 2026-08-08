@@ -76,10 +76,13 @@ async function runTests() {
   }
 
   // Test 5: Actual logged-in user appears in all new billing and GST audit records
-  AuthService.login({
+  AuthService.createSession({
     userId: 'user-777',
     userName: 'Tester John',
-    role: 'Admin'
+    email: 'admin@printopia.com',
+    role: 'COMPANY_ADMIN',
+    companyId: 'company-1',
+    companyName: 'PRINTOPIA GRAPHICS PVT. LTD.'
   });
 
   try {
@@ -88,23 +91,20 @@ async function runTests() {
     
     const logs = await GstApiService.getAuditLogs();
     const latestLog = logs[0];
-    assert(latestLog.userName === 'Tester John' && latestLog.userId === 'user-777' && latestLog.role === 'Admin', 'Verify: Actual logged-in user details captured in GST audit logs.');
+    assert(latestLog.userName === 'Tester John' && latestLog.userId === 'user-777' && latestLog.role === 'COMPANY_ADMIN', 'Verify: Actual logged-in user details captured in GST audit logs.');
   } catch (e: any) {
     assert(false, `Audit record test failed with error: ${e.message}`);
   }
 
   // Test 6: Invalid GSTIN checksum is detected
-  // Real valid GSTIN for test: 27AAPCS1445D1ZC (or 27AAPCS1445D1Z4 is invalid checksum)
   const validGstin = '27AAPCS1445D1ZC';
   const invalidChecksumGstin = '27AAPCS1445D1Z4';
-  const invalidFormatGstin = '123XYZ';
 
   assert(GstUtils.validateGstinChecksum(validGstin) === true, 'Verify: Real GSTIN checksum passes.');
   assert(GstUtils.validateGstinChecksum(invalidChecksumGstin) === false, 'Verify: Invalid GSTIN checksum is detected.');
 
   // Test 7: Locked period cannot be changed through normal status update
   try {
-    // Manually push a Locked period
     const periods = await GstApiService.getPeriods();
     console.log('Available periods in Test 7:', periods);
     const periodId = 'gst-2026-8';
@@ -124,10 +124,13 @@ async function runTests() {
   // Test 8: Only Admin can unlock with a reason
   const periodId = 'gst-2026-8';
   // Try unlocking as accounts user first
-  AuthService.login({
+  AuthService.createSession({
     userId: 'user-888',
     userName: 'Accounts User',
-    role: 'Accounts'
+    email: 'accounts@printopia.com',
+    role: 'ACCOUNTS',
+    companyId: 'company-1',
+    companyName: 'PRINTOPIA GRAPHICS PVT. LTD.'
   });
   try {
     await GstApiService.unlockPeriod(periodId, 'Reason by accounts');
@@ -137,10 +140,13 @@ async function runTests() {
   }
 
   // Log back in as Admin
-  AuthService.login({
+  AuthService.createSession({
     userId: 'user-777',
     userName: 'Tester John',
-    role: 'Admin'
+    email: 'admin@printopia.com',
+    role: 'COMPANY_ADMIN',
+    companyId: 'company-1',
+    companyName: 'PRINTOPIA GRAPHICS PVT. LTD.'
   });
 
   // Try unlocking with short reason

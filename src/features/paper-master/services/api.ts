@@ -14,6 +14,7 @@ import {
   PaperStatus,
   GrainDirection
 } from '../types';
+import { AuthService } from '../../../services/authService';
 
 // Helper to simulate network latency
 const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -484,6 +485,12 @@ export class PaperApiService {
   }): Promise<PaperMasterItem[]> {
     await delay(300);
     let papers = this.getStored<PaperMasterItem>(KEYS.PAPERS, initialPapers);
+    const currentCompanyId = AuthService.getCurrentCompanyId();
+
+    // Multi-tenant filter
+    papers = papers.filter(
+      (p) => p.scope === 'GLOBAL' || !p.companyId || p.companyId === currentCompanyId
+    );
 
     if (filters) {
       const { searchTerm, categoryId, status, gsmId, sheetSizeId } = filters;
@@ -590,8 +597,11 @@ export class PaperApiService {
       this.saveStored(KEYS.RATES, rates);
     }
 
+    const currentCompanyId = AuthService.getCurrentCompanyId();
     const newPaper: PaperMasterItem = {
       id: paperId,
+      companyId: paper.companyId || currentCompanyId,
+      scope: paper.scope || 'TENANT',
       paperName: paper.paperName,
       paperCode: paper.paperCode,
       categoryId: paper.categoryId,

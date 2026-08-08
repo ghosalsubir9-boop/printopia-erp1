@@ -10,6 +10,7 @@ import {
   CustomerPriceHistory,
   CustomerDocument
 } from '../types';
+import { AuthService } from '../../../services/authService';
 
 // STORAGE KEYS
 const STORAGE_CUSTOMERS = 'printopia_customers';
@@ -347,7 +348,9 @@ export class CustomerMasterService {
   static getCustomers(): CustomerMasterItem[] {
     this.initStorage();
     const data = localStorage.getItem(STORAGE_CUSTOMERS);
-    return data ? JSON.parse(data) : [];
+    const list: CustomerMasterItem[] = data ? JSON.parse(data) : [];
+    const currentCompanyId = AuthService.getCurrentCompanyId();
+    return list.filter((c) => c.companyId === currentCompanyId || !c.companyId);
   }
 
   // --- SAVE NEW CUSTOMER ---
@@ -355,10 +358,13 @@ export class CustomerMasterService {
     customer: Omit<CustomerMasterItem, 'id' | 'customerCode' | 'createdAt' | 'updatedAt' | 'createdBy' | 'updatedBy'>
   ): CustomerMasterItem {
     this.initStorage();
-    const customers = this.getCustomers();
+    const rawData = localStorage.getItem(STORAGE_CUSTOMERS);
+    const allCustomers: CustomerMasterItem[] = rawData ? JSON.parse(rawData) : [];
+    const currentCompanyId = AuthService.getCurrentCompanyId();
 
     // Generate consecutive CUST CODE
-    const nextSeq = customers.length + 1;
+    const tenantCustomers = allCustomers.filter((c) => c.companyId === currentCompanyId || !c.companyId);
+    const nextSeq = tenantCustomers.length + 1;
     const paddedSeq = String(nextSeq).padStart(4, '0');
     const customerCode = `CUST-26-${paddedSeq}`;
 
@@ -368,6 +374,7 @@ export class CustomerMasterService {
     const newCustomer: CustomerMasterItem = {
       ...customer,
       id: newId,
+      companyId: customer.companyId || currentCompanyId,
       customerCode,
       createdAt: timestamp,
       updatedAt: timestamp,
@@ -375,8 +382,8 @@ export class CustomerMasterService {
       updatedBy: 'Subir Ghosal'
     };
 
-    customers.push(newCustomer);
-    localStorage.setItem(STORAGE_CUSTOMERS, JSON.stringify(customers));
+    allCustomers.push(newCustomer);
+    localStorage.setItem(STORAGE_CUSTOMERS, JSON.stringify(allCustomers));
 
     // Seed default primary contact and billing/shipping addresses derived from the main form
     this.addContact({
@@ -418,14 +425,15 @@ export class CustomerMasterService {
   // --- UPDATE CUSTOMER ---
   static updateCustomer(id: string, updated: Partial<CustomerMasterItem>): CustomerMasterItem {
     this.initStorage();
-    const customers = this.getCustomers();
-    const index = customers.findIndex((c) => c.id === id);
+    const rawData = localStorage.getItem(STORAGE_CUSTOMERS);
+    const allCustomers: CustomerMasterItem[] = rawData ? JSON.parse(rawData) : [];
+    const index = allCustomers.findIndex((c) => c.id === id);
 
     if (index === -1) {
       throw new Error(`Customer with ID ${id} not found`);
     }
 
-    const current = customers[index];
+    const current = allCustomers[index];
     const timestamp = new Date().toISOString();
 
     const updatedCustomer: CustomerMasterItem = {
@@ -437,8 +445,8 @@ export class CustomerMasterService {
       updatedBy: 'Subir Ghosal'
     };
 
-    customers[index] = updatedCustomer;
-    localStorage.setItem(STORAGE_CUSTOMERS, JSON.stringify(customers));
+    allCustomers[index] = updatedCustomer;
+    localStorage.setItem(STORAGE_CUSTOMERS, JSON.stringify(allCustomers));
 
     return updatedCustomer;
   }
@@ -446,12 +454,12 @@ export class CustomerMasterService {
   // --- DELETE CUSTOMER ---
   static deleteCustomer(id: string): void {
     this.initStorage();
-    let customers = this.getCustomers();
-    customers = customers.filter((c) => c.id !== id);
-    localStorage.setItem(STORAGE_CUSTOMERS, JSON.stringify(customers));
+    const rawData = localStorage.getItem(STORAGE_CUSTOMERS);
+    let allCustomers: CustomerMasterItem[] = rawData ? JSON.parse(rawData) : [];
+    allCustomers = allCustomers.filter((c) => c.id !== id);
+    localStorage.setItem(STORAGE_CUSTOMERS, JSON.stringify(allCustomers));
 
     // Cleanup associated tables in localStorage cascade
-    let contacts = this.getContacts(id);
     this.deleteAssociatedRecords(STORAGE_CONTACTS, id);
     this.deleteAssociatedRecords(STORAGE_ADDRESSES, id);
     this.deleteAssociatedRecords(STORAGE_HISTORY, id);

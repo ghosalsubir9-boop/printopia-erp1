@@ -70,6 +70,8 @@ export interface ProductCategory {
 
 export interface ProductMasterItem {
   id: string;
+  companyId?: string;
+  scope?: 'GLOBAL' | 'TENANT';
   productName: string;
   productCode: string; // Unique
   categoryId: string; // Ref to ProductCategory

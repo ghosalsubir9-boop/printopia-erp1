@@ -4,6 +4,7 @@
  */
 
 import { EstimateJob } from '../types';
+import { AuthService } from '../../../../services/authService';
 
 const STORAGE_KEY = 'printopia_estimate_jobs';
 
@@ -125,6 +126,9 @@ export class EstimateApiService {
   }): Promise<EstimateJob[]> {
     await delay(300); // Simulate network latency
     let list = this.getStoredEstimates();
+    const currentCompanyId = AuthService.getCurrentCompanyId();
+
+    list = list.filter((item) => !item.companyId || item.companyId === currentCompanyId);
 
     if (filters) {
       const { searchTerm, customerId, priority } = filters;
@@ -192,10 +196,12 @@ export class EstimateApiService {
     
     const id = `est-${Date.now()}`;
     const timestamp = new Date().toISOString();
+    const currentCompanyId = AuthService.getCurrentCompanyId();
 
     const newJob: EstimateJob = {
       ...job,
       id,
+      companyId: job.companyId || currentCompanyId,
       estimateNumber,
       createdAt: timestamp,
       updatedAt: timestamp

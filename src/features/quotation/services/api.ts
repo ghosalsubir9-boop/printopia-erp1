@@ -1,4 +1,5 @@
 import { QuotationHeader, QuotationStatus } from '../types';
+import { AuthService } from '../../../services/authService';
 
 const STORAGE_KEY = 'printopia_quotations';
 
@@ -13,7 +14,9 @@ export class QuotationApiService {
   }
 
   static async getQuotations(): Promise<QuotationHeader[]> {
-    return this.getStoredQuotations();
+    const list = this.getStoredQuotations();
+    const currentCompanyId = AuthService.getCurrentCompanyId();
+    return list.filter((q) => !q.companyId || q.companyId === currentCompanyId);
   }
 
   static async getQuotationById(id: string): Promise<QuotationHeader | null> {
@@ -23,20 +26,27 @@ export class QuotationApiService {
 
   static async saveQuotation(quotation: QuotationHeader): Promise<QuotationHeader> {
     const quotations = this.getStoredQuotations();
+    const currentCompanyId = AuthService.getCurrentCompanyId();
     const index = quotations.findIndex(q => q.id === quotation.id);
+
+    const companyId = quotation.companyId || currentCompanyId;
+    const preparedQuotation: QuotationHeader = {
+      ...quotation,
+      companyId
+    };
     
     if (index >= 0) {
-      quotations[index] = { ...quotation, updatedAt: new Date().toISOString() };
+      quotations[index] = { ...preparedQuotation, updatedAt: new Date().toISOString() };
     } else {
       quotations.push({ 
-        ...quotation, 
+        ...preparedQuotation, 
         createdAt: new Date().toISOString(), 
         updatedAt: new Date().toISOString() 
       });
     }
     
     this.setStoredQuotations(quotations);
-    return quotation;
+    return preparedQuotation;
   }
 
   static async deleteQuotation(id: string): Promise<void> {
@@ -46,8 +56,10 @@ export class QuotationApiService {
 
   static generateQuotationNumber(): string {
     const quotations = this.getStoredQuotations();
+    const currentCompanyId = AuthService.getCurrentCompanyId();
+    const tenantQuotations = quotations.filter((q) => !q.companyId || q.companyId === currentCompanyId);
     const year = new Date().getFullYear();
-    const count = quotations.length + 1;
+    const count = tenantQuotations.length + 1;
     return `QT-${year}-${count.toString().padStart(4, '0')}`;
   }
 

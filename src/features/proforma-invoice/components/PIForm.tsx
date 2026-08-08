@@ -51,6 +51,19 @@ export default function PIForm({ initialData, fromQuotation, onSave, onCancel }:
   const isLocked = !!initialData?.isLocked;
   const isFromQuotation = !!fromQuotation || !!initialData?.quotationId;
 
+  if (!isFromQuotation && !initialData?.id) {
+    return (
+      <Box sx={{ p: 4, textAlign: 'center', maxWidth: 600, mx: 'auto', mt: 4 }}>
+        <Alert severity="warning" sx={{ mb: 3 }}>
+          Proforma Invoice must be generated from confirmed quotation products.
+        </Alert>
+        <Button variant="contained" onClick={onCancel} sx={{ textTransform: 'none', borderRadius: 2 }}>
+          Back to Proforma Invoices
+        </Button>
+      </Box>
+    );
+  }
+
   const [formData, setFormData] = useState<Partial<ProformaInvoice>>(() => {
     const defaultStateCode = (fromQuotation as any)?.customerStateCode || fromQuotation?.gstin?.substring(0, 2) || initialData?.stateCode || '';
     const defaultCustomerName = initialData?.customerName || fromQuotation?.customerName || '';

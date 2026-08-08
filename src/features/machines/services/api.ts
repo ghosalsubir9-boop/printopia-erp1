@@ -5,6 +5,7 @@
 
 import { MachineMasterItem, SheetMappingItem, PrintingMethod } from '../types';
 import { initialMachineMasterItems } from '../seedData';
+import { AuthService } from '../../../services/authService';
 
 const STORAGE_KEY = 'printopia_machine_master_registry_v3';
 
@@ -53,6 +54,9 @@ export class MachineApiService {
   }): Promise<MachineMasterItem[]> {
     await delay(350); // Simulate network latency
     let machines = this.getStoredMachines();
+    const currentCompanyId = AuthService.getCurrentCompanyId();
+
+    machines = machines.filter((m) => !m.companyId || m.companyId === currentCompanyId);
 
     if (filters) {
       const { searchTerm, machineType, status, printingMethod } = filters;
@@ -108,9 +112,11 @@ export class MachineApiService {
       throw new Error(`Machine Code '${machine.machineCode}' already registered in the system.`);
     }
 
+    const currentCompanyId = AuthService.getCurrentCompanyId();
     const newMachine: MachineMasterItem = {
       ...machine,
       id: `mm-${Date.now()}`,
+      companyId: machine.companyId || currentCompanyId,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
       createdBy: 'subir.ghosal', // Current User in session

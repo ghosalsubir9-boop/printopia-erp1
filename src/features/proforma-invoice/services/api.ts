@@ -2,6 +2,7 @@ import { ProformaInvoice, PIPayment } from '../types';
 import { PINumberingService } from './PINumberingService';
 import { PICalculationService } from './PICalculationService';
 import { CompanySettingsService } from '../../../services/CompanySettingsService';
+import { AuthService } from '../../../services/authService';
 
 const STORAGE_KEY = 'printopia_proforma_invoices';
 
@@ -16,7 +17,9 @@ export class PIApiService {
   }
 
   static async getInvoices(): Promise<ProformaInvoice[]> {
-    return this.getStoredInvoices();
+    const list = this.getStoredInvoices();
+    const currentCompanyId = AuthService.getCurrentCompanyId();
+    return list.filter((i) => !i.companyId || i.companyId === currentCompanyId);
   }
 
   static async getInvoiceById(id: string): Promise<ProformaInvoice | null> {
@@ -25,39 +28,65 @@ export class PIApiService {
   }
 
   /**
-   * Checks if a PI is eligible for production approval based on company release rules
+   * Checks if any option ID is already present in an active (non-cancelled) PI.
    */
-  static canApproveForProduction(pi: ProformaInvoice): { canApprove: boolean; reason?: string } {
+  static isOptionAlreadyConverted(optionId: string, currentPiId?: string): boolean {
+    const invoices = this.getStoredInvoices();
+    return invoices.some(pi => 
+      pi.id !== currentPiId &&
+      pi.status !== 'Cancelled' &&
+      (pi.convertedOptionIds || []).includes(optionId)
+    );
+  }
+
+  /**
+   * Central function to check production approval eligibility based on release rules
+   */
+  static getProductionApprovalEligibility(pi: ProformaInvoice, companySettings?: any): { eligible: boolean; canApprove: boolean; reason?: string } {
     if (pi.status === 'Cancelled') {
-      return { canApprove: false, reason: 'Proforma Invoice is cancelled.' };
-    }
-    if (pi.productionApproved || pi.isProductionApproved) {
-      return { canApprove: true };
+      return { eligible: false, canApprove: false, reason: 'Proforma Invoice is cancelled.' };
     }
 
-    const settings = CompanySettingsService.getSettings();
+    const settings = companySettings || CompanySettingsService.getSettings();
     const rule = settings.productionReleaseRule || 'Required Advance Received';
 
-    if (rule === 'Required Advance Received') {
+    if (rule === 'Manual Approval' || rule === 'MANUAL_APPROVAL' || rule === 'No Payment Restriction' || rule === 'NO_PAYMENT_RESTRICTION') {
+      return { eligible: true, canApprove: true };
+    } else if (rule === 'Required Advance Received' || rule === 'REQUIRED_ADVANCE') {
       const required = pi.advanceRequiredAmount || pi.advanceAmount || 0;
       const received = pi.totalReceived || 0;
       if (required > 0 && received < required) {
         return { 
+          eligible: false, 
           canApprove: false, 
-          reason: `Minimum required advance of ₹${required.toLocaleString('en-IN')} is pending. Total received so far: ₹${received.toLocaleString('en-IN')}` 
+          reason: `Required advance payment of ₹${required.toLocaleString('en-IN')} has not been received. Total received so far: ₹${received.toLocaleString('en-IN')}` 
         };
       }
-    } else if (rule === 'Full Payment Received') {
+      return { eligible: true, canApprove: true };
+    } else if (rule === 'Full Payment Received' || rule === 'FULL_PAYMENT') {
       const balance = pi.balanceDue ?? pi.balanceAmount ?? 0;
       if (balance > 0) {
         return { 
+          eligible: false, 
           canApprove: false, 
           reason: `Full payment is required before production approval. Balance Outstanding: ₹${balance.toLocaleString('en-IN')}` 
         };
       }
+      return { eligible: true, canApprove: true };
     }
 
-    return { canApprove: true };
+    return { eligible: true, canApprove: true };
+  }
+
+  /**
+   * Checks if a PI is eligible for production approval based on company release rules
+   */
+  static canApproveForProduction(pi: ProformaInvoice): { canApprove: boolean; reason?: string } {
+    if (pi.productionApproved || pi.isProductionApproved) {
+      return { canApprove: true };
+    }
+    const check = this.getProductionApprovalEligibility(pi);
+    return { canApprove: check.eligible, reason: check.reason };
   }
 
   /**
@@ -71,21 +100,21 @@ export class PIApiService {
       return { canConvert: true };
     }
 
-    const approvalCheck = this.canApproveForProduction(pi);
-    if (!approvalCheck.canApprove) {
-      return { canConvert: false, reason: approvalCheck.reason };
-    }
-
-    return { canConvert: true };
+    return { 
+      canConvert: false, 
+      reason: 'Proforma Invoice requires explicit Production Approval by Admin before a Production Order can be created.' 
+    };
   }
 
   static async saveInvoice(invoice: Partial<ProformaInvoice>): Promise<ProformaInvoice> {
     const invoices = this.getStoredInvoices();
+    const currentCompanyId = AuthService.getCurrentCompanyId();
     const companySettings = CompanySettingsService.getSettings();
     const companyStateCode = companySettings.stateCode || '19';
 
     // Recalculate totals
     const calculated = PICalculationService.calculateTotals(invoice, companyStateCode);
+    const companyId = invoice.companyId || calculated.companyId || currentCompanyId;
 
     if (calculated.id) {
       const index = invoices.findIndex(i => i.id === calculated.id);
@@ -93,6 +122,7 @@ export class PIApiService {
         const updated = {
           ...invoices[index],
           ...calculated,
+          companyId,
           updatedAt: new Date().toISOString()
         } as ProformaInvoice;
         invoices[index] = updated;
@@ -103,11 +133,13 @@ export class PIApiService {
 
     // New Invoice Creation
     const now = new Date();
-    const piNumber = calculated.piNumber || PINumberingService.generateNextPINumber(invoices, calculated.date || now);
+    const tenantInvoices = invoices.filter(i => !i.companyId || i.companyId === companyId);
+    const piNumber = calculated.piNumber || PINumberingService.generateNextPINumber(tenantInvoices, calculated.date || now);
 
     const newInvoice: ProformaInvoice = {
       ...calculated,
       id: calculated.id || `pi-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+      companyId,
       piNumber,
       basePiNumber: piNumber,
       revisionNumber: 0,

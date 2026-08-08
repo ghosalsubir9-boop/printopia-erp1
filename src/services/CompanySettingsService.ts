@@ -3,6 +3,9 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import { AuthService } from './authService';
+import { TenantService } from './TenantService';
+
 export type ProductionReleaseRule = 
   | 'Manual Approval'
   | 'Required Advance Received'
@@ -10,6 +13,7 @@ export type ProductionReleaseRule =
   | 'No Payment Restriction';
 
 export interface CompanySettings {
+  companyId?: string;
   name: string;
   logo: string;
   address: string;
@@ -30,6 +34,7 @@ export interface CompanySettings {
 }
 
 export const COMPANY_SETTINGS: CompanySettings = {
+  companyId: "company-1",
   name: "PRINTOPIA GRAPHICS PVT. LTD.",
   logo: "https://via.placeholder.com/150?text=PRINTOPIA",
   address: "Plot No. 42, Printing Press Area, Wagle Industrial Estate, Kolkata, West Bengal - 700001",
@@ -51,12 +56,42 @@ export const COMPANY_SETTINGS: CompanySettings = {
 
 export class CompanySettingsService {
   static getSettings(): CompanySettings {
-    // In a real app, this might come from localStorage or an API
-    const stored = localStorage.getItem('company_settings');
-    return stored ? JSON.parse(stored) : COMPANY_SETTINGS;
+    const companyId = AuthService.getCurrentCompanyId();
+    if (!companyId) {
+      return COMPANY_SETTINGS;
+    }
+
+    const storageKey = `company_settings_${companyId}`;
+    const stored = localStorage.getItem(storageKey);
+    if (stored) {
+      return JSON.parse(stored);
+    }
+
+    // Default to matched initial tenant profile from TenantService
+    const tenant = TenantService.getTenantById(companyId);
+    if (tenant) {
+      return {
+        ...COMPANY_SETTINGS,
+        companyId: tenant.id,
+        name: tenant.companyName,
+        address: tenant.address,
+        state: tenant.state,
+        stateCode: tenant.stateCode,
+        gstin: tenant.gstin,
+        mobile: tenant.mobile,
+        email: tenant.email
+      };
+    }
+
+    return COMPANY_SETTINGS;
   }
 
   static saveSettings(settings: CompanySettings): void {
-    localStorage.setItem('company_settings', JSON.stringify(settings));
+    const companyId = settings.companyId || AuthService.getCurrentCompanyId();
+    if (!companyId) {
+      throw new Error('Cannot save company settings without tenant context');
+    }
+    const storageKey = `company_settings_${companyId}`;
+    localStorage.setItem(storageKey, JSON.stringify({ ...settings, companyId }));
   }
 }

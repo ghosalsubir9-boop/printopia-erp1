@@ -74,6 +74,7 @@ export interface CustomerPrintingPreferences {
 export interface CustomerMasterItem {
   linkedLedgerCode?: string;
   id: string;
+  companyId?: string;
   customerCode: string; // Auto-generated CUST-XXXX
   companyName: string;
   gstRegistered: boolean;

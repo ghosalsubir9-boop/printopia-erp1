@@ -50,11 +50,12 @@ interface PIDetailsProps {
   invoice: ProformaInvoice;
   onBack: () => void;
   onEdit: (pi: ProformaInvoice) => void;
-  onConvertToJobCard: (pi: ProformaInvoice) => void;
+  onCreateProductionOrder?: (pi: ProformaInvoice) => void;
+  onConvertToJobCard?: (pi: ProformaInvoice) => void;
   onUpdate: (pi: ProformaInvoice) => void;
 }
 
-export default function PIDetails({ invoice, onBack, onEdit, onConvertToJobCard, onUpdate }: PIDetailsProps) {
+export default function PIDetails({ invoice, onBack, onEdit, onCreateProductionOrder, onConvertToJobCard, onUpdate }: PIDetailsProps) {
   const companySettings = CompanySettingsService.getSettings();
   
   const [isPaymentDialogOpen, setIsPaymentDialogOpen] = useState(false);
@@ -163,7 +164,8 @@ export default function PIDetails({ invoice, onBack, onEdit, onConvertToJobCard,
         setActionError(`Cannot Convert: ${check.reason}`);
         return;
       }
-      onConvertToJobCard(invoice);
+      const fn = onCreateProductionOrder || onConvertToJobCard;
+      if (fn) fn(invoice);
     } catch (error: any) {
       setActionError(error.message || 'Failed to initiate production conversion');
     }

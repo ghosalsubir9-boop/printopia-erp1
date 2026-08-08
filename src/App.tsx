@@ -4,6 +4,7 @@
  */
 
 import React, { useState } from 'react';
+import { Box, Alert, Button, Typography, Paper } from '@mui/material';
 import DashboardLayout from './features/machines/components/DashboardLayout';
 import MachineMaster from './features/machines/components/MachineMaster';
 import PaperMaster from './features/paper-master/components/PaperMaster';
@@ -23,17 +24,41 @@ import JobCardMaster from './features/production/components/JobCardMaster';
 import GstManagementModule from './features/gst-management/components/GstManagementModule';
 import PurchaseInvoiceModule from './features/purchase-invoice/components/PurchaseInvoiceModule';
 import FinanceHub from './features/finance/components/FinanceHub';
-
 import VoucherModule from './features/finance/components/Vouchers/VoucherModule';
-
 import FinancialReportsHub from './features/finance/components/Reports/FinancialReportsHub';
+import SuperAdminView from './components/SuperAdminView';
+import LoginView from './components/LoginView';
+import { AuthService } from './services/authService';
 
 export default function App() {
-  const [activeModule, setActiveModule] = useState<'dashboard' | 'machines' | 'papers' | 'products' | 'customers' | 'vendors' | 'estimates' | 'quotations' | 'proforma-invoices' | 'production' | 'purchase-orders' | 'grns' | 'inventory' | 'gst-invoices' | 'payment-receipts' | 'customer-outstanding' | 'credit-notes' | 'company-settings' | 'job-cards' | 'gst-reports' | 'purchase-invoices' | 'vendor-outstanding' | 'finance' | 'vouchers' | 'financial-reports'>('dashboard');
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => AuthService.isAuthenticated());
+  
+  const currentUser = AuthService.getCurrentUser();
+
+  const [activeModule, setActiveModule] = useState<string>(() => {
+    const user = AuthService.getCurrentUser();
+    if (user?.role === 'SUPER_ADMIN') return 'super-admin';
+    return 'dashboard';
+  });
+
   const [initialQuickData, setInitialQuickData] = useState<any>(null);
   const [initialQuotationData, setInitialQuotationData] = useState<any>(null);
   const [initialPIData, setInitialPIData] = useState<any>(null);
   const [initialPOData, setInitialPOData] = useState<any>(null);
+
+  if (!isAuthenticated) {
+    return <LoginView onLoginSuccess={() => {
+      setIsAuthenticated(true);
+      const user = AuthService.getCurrentUser();
+      if (user?.role === 'SUPER_ADMIN') {
+        setActiveModule('super-admin');
+      } else {
+        setActiveModule('dashboard');
+      }
+    }} />;
+  }
+
+  const isAllowed = currentUser ? AuthService.isModuleAllowed(currentUser.role, activeModule) : true;
 
   const handleConvertToProduction = (pi: any) => {
     setInitialPOData(pi);
@@ -51,14 +76,34 @@ export default function App() {
   };
 
   return (
-    <DashboardLayout activeModule={activeModule} onModuleChange={(m) => {
-      setActiveModule(m);
-      if (m !== 'estimates') setInitialQuickData(null);
-      if (m !== 'quotations') setInitialQuotationData(null);
-      if (m !== 'proforma-invoices') setInitialPIData(null);
-      if (m !== 'production') setInitialPOData(null);
-    }}>
-      {activeModule === 'dashboard' ? (
+    <DashboardLayout 
+      activeModule={activeModule} 
+      onLogout={() => setIsAuthenticated(false)}
+      onModuleChange={(m) => {
+        setActiveModule(m);
+        if (m !== 'estimates') setInitialQuickData(null);
+        if (m !== 'quotations') setInitialQuotationData(null);
+        if (m !== 'proforma-invoices') setInitialPIData(null);
+        if (m !== 'production') setInitialPOData(null);
+      }}
+    >
+      {!isAllowed ? (
+        <Box sx={{ p: 4, maxWidth: 650, mx: 'auto', textAlign: 'center', mt: 4 }}>
+          <Paper variant="outlined" sx={{ p: 4, borderRadius: 3 }}>
+            <Alert severity="warning" sx={{ mb: 3, textAlign: 'left', fontWeight: 'bold' }}>
+              Access Restricted ({currentUser?.role})
+            </Alert>
+            <Typography variant="body1" sx={{ mb: 3, color: 'text.secondary' }}>
+              Your current assigned system role (<strong>{currentUser?.role}</strong>) does not have authorization to access the <strong>{activeModule.toUpperCase()}</strong> module.
+            </Typography>
+            <Button variant="contained" onClick={() => setActiveModule(currentUser?.role === 'SUPER_ADMIN' ? 'super-admin' : 'dashboard')} sx={{ textTransform: 'none', borderRadius: 2 }}>
+              Return to Dashboard
+            </Button>
+          </Paper>
+        </Box>
+      ) : activeModule === 'super-admin' ? (
+        <SuperAdminView />
+      ) : activeModule === 'dashboard' ? (
         <HomeDashboard onNavigate={setActiveModule} />
       ) : activeModule === 'machines' ? (
         <MachineMaster />

@@ -17,10 +17,14 @@ import {
   Alert, 
   Container,
   FormControlLabel,
-  Checkbox
+  Checkbox,
+  Tabs,
+  Tab,
+  Paper
 } from '@mui/material';
-import { Save as SaveIcon, Settings as SettingsIcon } from '@mui/icons-material';
+import { Save as SaveIcon, Settings as SettingsIcon, People as PeopleIcon } from '@mui/icons-material';
 import { CompanySettingsService, CompanySettings } from '../services/CompanySettingsService';
+import CompanyUserManagementView from './CompanyUserManagementView';
 
 const INDIAN_STATES = [
   { name: 'Andaman and Nicobar Islands', code: '35' },
@@ -62,6 +66,7 @@ const INDIAN_STATES = [
 ];
 
 export default function CompanySettingsView() {
+  const [tabIndex, setTabIndex] = useState<number>(0);
   const [settings, setSettings] = useState<CompanySettings>({
     name: '',
     logo: '',
@@ -124,255 +129,293 @@ export default function CompanySettingsView() {
 
   return (
     <Container maxWidth="lg" sx={{ py: 1 }}>
-      <Box sx={{ mb: 4 }}>
+      <Box sx={{ mb: 3 }}>
         <Typography variant="h4" sx={{ fontWeight: 900, display: 'flex', alignItems: 'center', gap: 1.5, letterSpacing: '-0.02em', mb: 1 }}>
           <SettingsIcon color="primary" sx={{ fontSize: 36 }} /> Company Profile & Settings
         </Typography>
         <Typography variant="body2" color="text.secondary">
-          Configure corporate metadata, legal registrations, standard banking coordinates, and digital signatures. Saved parameters are applied company-wide to all billing workflows.
+          Configure corporate metadata, legal registrations, standard banking coordinates, digital signatures, and staff user accounts.
         </Typography>
       </Box>
 
-      {saveSuccess && (
-        <Alert severity="success" sx={{ mb: 3, fontWeight: 'medium' }}>
-          Company Settings saved successfully! All generated invoices, print previews, and calculations will use these updated corporate settings immediately.
-        </Alert>
-      )}
+      <Paper variant="outlined" sx={{ borderRadius: 3, mb: 3, overflow: 'hidden' }}>
+        <Tabs
+          value={tabIndex}
+          onChange={(_, v) => setTabIndex(v)}
+          indicatorColor="primary"
+          textColor="primary"
+          sx={{ borderBottom: 1, borderColor: 'divider', px: 2, bgcolor: '#f8fafc' }}
+        >
+          <Tab icon={<SettingsIcon />} iconPosition="start" label="Company Profile Settings" sx={{ fontWeight: 'bold' }} />
+          <Tab icon={<PeopleIcon />} iconPosition="start" label="Staff Accounts & Roles" sx={{ fontWeight: 'bold' }} />
+        </Tabs>
 
-      <form onSubmit={handleSubmit}>
-        <Grid container spacing={3}>
-          {/* General and Contact Information */}
-          <Grid size={{ xs: 12, md: 7 }}>
-            <Card variant="outlined" sx={{ mb: 3 }}>
-              <CardContent sx={{ p: 3 }}>
-                <Typography variant="subtitle1" sx={{ fontWeight: 'bold', mb: 2, display: 'flex', alignItems: 'center', gap: 1 }}>
-                  Corporate Identity & Address
-                </Typography>
-                <Divider sx={{ mb: 3 }} />
+        {tabIndex === 0 ? (
+          <Box sx={{ p: 3 }}>
+            {saveSuccess && (
+              <Alert severity="success" sx={{ mb: 3, fontWeight: 'medium' }}>
+                Company Settings saved successfully! All generated invoices, print previews, and calculations will use these updated corporate settings immediately.
+              </Alert>
+            )}
 
-                <Grid container spacing={2}>
-                  <Grid size={12}>
-                    <TextField
-                      required
-                      fullWidth
-                      label="Company Registered Name"
-                      value={settings.name}
-                      onChange={(e) => handleChange('name', e.target.value)}
-                      placeholder="e.g. PRINTOPIA GRAPHICS PVT. LTD."
-                    />
-                  </Grid>
+            <form onSubmit={handleSubmit}>
+              <Grid container spacing={3}>
+                {/* General and Contact Information */}
+                <Grid item xs={12} md={7}>
+                  <Card variant="outlined" sx={{ mb: 3 }}>
+                    <CardContent sx={{ p: 3 }}>
+                      <Typography variant="subtitle1" sx={{ fontWeight: 'bold', mb: 2, display: 'flex', alignItems: 'center', gap: 1 }}>
+                        Corporate Identity & Address
+                      </Typography>
+                      <Divider sx={{ mb: 3 }} />
 
-                  <Grid size={12}>
-                    <TextField
-                      fullWidth
-                      label="Company Logo URL"
-                      value={settings.logo}
-                      onChange={(e) => handleChange('logo', e.target.value)}
-                      placeholder="e.g. https://via.placeholder.com/150?text=Logo"
-                      helperText="Provide a direct image URL for the printed tax invoice header"
-                    />
-                  </Grid>
+                      <Grid container spacing={2}>
+                        <Grid item xs={12}>
+                          <TextField
+                            required
+                            fullWidth
+                            label="Company Registered Name"
+                            value={settings.name}
+                            onChange={(e) => handleChange('name', e.target.value)}
+                            placeholder="e.g. PRINTOPIA GRAPHICS PVT. LTD."
+                          />
+                        </Grid>
 
-                  <Grid size={12}>
-                    <TextField
-                      required
-                      fullWidth
-                      multiline
-                      rows={3}
-                      label="Full Corporate Address"
-                      value={settings.address}
-                      onChange={(e) => handleChange('address', e.target.value)}
-                      placeholder="Plot No. 42, Printing Press Area, Kolkata - 700001"
-                    />
-                  </Grid>
+                        <Grid item xs={12}>
+                          <TextField
+                            fullWidth
+                            label="Company Logo URL"
+                            value={settings.logo}
+                            onChange={(e) => handleChange('logo', e.target.value)}
+                            placeholder="e.g. https://via.placeholder.com/150?text=Logo"
+                            helperText="Provide a direct image URL for the printed tax invoice header"
+                          />
+                        </Grid>
 
-                  <Grid size={6}>
-                    <TextField
-                      required
-                      fullWidth
-                      select
-                      label="State"
-                      value={settings.state}
-                      onChange={(e) => handleStateChange(e.target.value)}
+                        <Grid item xs={12}>
+                          <TextField
+                            required
+                            fullWidth
+                            multiline
+                            rows={3}
+                            label="Full Corporate Address"
+                            value={settings.address}
+                            onChange={(e) => handleChange('address', e.target.value)}
+                            placeholder="Plot No. 42, Printing Press Area, Kolkata - 700001"
+                          />
+                        </Grid>
+
+                        <Grid item xs={12} sm={6}>
+                          <TextField
+                            required
+                            fullWidth
+                            select
+                            label="State"
+                            value={settings.state}
+                            onChange={(e) => handleStateChange(e.target.value)}
+                          >
+                            {INDIAN_STATES.map((state) => (
+                              <MenuItem key={state.name} value={state.name}>
+                                {state.name}
+                              </MenuItem>
+                            ))}
+                          </TextField>
+                        </Grid>
+
+                        <Grid item xs={12} sm={6}>
+                          <TextField
+                            required
+                            fullWidth
+                            label="State Code"
+                            value={settings.stateCode}
+                            onChange={(e) => handleChange('stateCode', e.target.value)}
+                            placeholder="e.g. 19"
+                            helperText="Standard numeric GST State Code"
+                          />
+                        </Grid>
+                      </Grid>
+                    </CardContent>
+                  </Card>
+
+                  <Card variant="outlined">
+                    <CardContent sx={{ p: 3 }}>
+                      <Typography variant="subtitle1" sx={{ fontWeight: 'bold', mb: 2, display: 'flex', alignItems: 'center', gap: 1 }}>
+                        Corporate Contact Details
+                      </Typography>
+                      <Divider sx={{ mb: 3 }} />
+
+                      <Grid container spacing={2}>
+                        <Grid item xs={12} sm={6}>
+                          <TextField
+                            required
+                            fullWidth
+                            label="Contact Mobile"
+                            value={settings.mobile}
+                            onChange={(e) => handleChange('mobile', e.target.value)}
+                            placeholder="e.g. +91 98300 12345"
+                          />
+                        </Grid>
+
+                        <Grid item xs={12} sm={6}>
+                          <TextField
+                            required
+                            fullWidth
+                            label="Contact Email"
+                            value={settings.email}
+                            onChange={(e) => handleChange('email', e.target.value)}
+                            placeholder="e.g. billing@printopia.com"
+                          />
+                        </Grid>
+                      </Grid>
+                    </CardContent>
+                  </Card>
+                </Grid>
+
+                {/* Legal, Signature, and Banking */}
+                <Grid item xs={12} md={5}>
+                  <Card variant="outlined" sx={{ mb: 3 }}>
+                    <CardContent sx={{ p: 3 }}>
+                      <Typography variant="subtitle1" sx={{ fontWeight: 'bold', mb: 2, display: 'flex', alignItems: 'center', gap: 1 }}>
+                        Regulatory & Signatory
+                      </Typography>
+                      <Divider sx={{ mb: 3 }} />
+
+                      <Grid container spacing={2}>
+                        <Grid item xs={12}>
+                          <TextField
+                            required
+                            fullWidth
+                            label="GSTIN (Goods & Services Tax ID)"
+                            value={settings.gstin}
+                            onChange={(e) => handleChange('gstin', e.target.value)}
+                            placeholder="e.g. 19AABCP1234F1Z1"
+                          />
+                        </Grid>
+
+                        <Grid item xs={12}>
+                          <TextField
+                            required
+                            fullWidth
+                            label="Authorized Signatory Name"
+                            value={settings.authorizedSignatory}
+                            onChange={(e) => handleChange('authorizedSignatory', e.target.value)}
+                            placeholder="e.g. Subir Ghosal"
+                            helperText="Name printed at bottom-right under declaration"
+                          />
+                        </Grid>
+
+                        <Grid item xs={12}>
+                          <FormControlLabel
+                            control={
+                              <Checkbox
+                                checked={!!settings.disableInkTracking}
+                                onChange={(e) => handleChange('disableInkTracking', e.target.checked)}
+                                color="primary"
+                              />
+                            }
+                            label="Disable Ink Tracking"
+                          />
+                        </Grid>
+
+                        <Grid item xs={12}>
+                          <TextField
+                            required
+                            fullWidth
+                            select
+                            label="Production Release Rule"
+                            value={settings.productionReleaseRule || 'Required Advance Received'}
+                            onChange={(e) => handleChange('productionReleaseRule', e.target.value)}
+                            helperText="Controls when Proforma Invoices can be approved/released for Production Orders"
+                          >
+                            <MenuItem value="Required Advance Received">Required Advance Received</MenuItem>
+                            <MenuItem value="Manual Approval">Manual Approval</MenuItem>
+                            <MenuItem value="Full Payment Received">Full Payment Received</MenuItem>
+                            <MenuItem value="No Payment Restriction">No Payment Restriction</MenuItem>
+                          </TextField>
+                        </Grid>
+                      </Grid>
+                    </CardContent>
+                  </Card>
+
+                  <Card variant="outlined">
+                    <CardContent sx={{ p: 3 }}>
+                      <Typography variant="subtitle1" sx={{ fontWeight: 'bold', mb: 2, display: 'flex', alignItems: 'center', gap: 1 }}>
+                        Corporate Bank Details
+                      </Typography>
+                      <Divider sx={{ mb: 3 }} />
+
+                      <Grid container spacing={2}>
+                        <Grid item xs={12}>
+                          <TextField
+                            required
+                            fullWidth
+                            label="Bank Name"
+                            value={settings.bankDetails.bankName}
+                            onChange={(e) => handleBankChange('bankName', e.target.value)}
+                            placeholder="e.g. HDFC Bank Ltd."
+                          />
+                        </Grid>
+
+                        <Grid item xs={12}>
+                          <TextField
+                            required
+                            fullWidth
+                            label="Bank Account Number"
+                            value={settings.bankDetails.accountNumber}
+                            onChange={(e) => handleBankChange('accountNumber', e.target.value)}
+                            placeholder="e.g. 50200012345678"
+                          />
+                        </Grid>
+
+                        <Grid item xs={12}>
+                          <TextField
+                            required
+                            fullWidth
+                            label="IFSC Code"
+                            value={settings.bankDetails.ifscCode}
+                            onChange={(e) => handleBankChange('ifscCode', e.target.value)}
+                            placeholder="e.g. HDFC0000123"
+                          />
+                        </Grid>
+
+                        <Grid item xs={12}>
+                          <TextField
+                            required
+                            fullWidth
+                            label="Branch Name & Location"
+                            value={settings.bankDetails.branchName}
+                            onChange={(e) => handleBankChange('branchName', e.target.value)}
+                            placeholder="e.g. Sector V Branch, Kolkata"
+                          />
+                        </Grid>
+                      </Grid>
+                    </CardContent>
+                  </Card>
+                </Grid>
+
+                <Grid item xs={12}>
+                  <Box sx={{ display: 'flex', justifyContent: 'flex-end', mt: 1, mb: 2 }}>
+                    <Button
+                      type="submit"
+                      variant="contained"
+                      color="primary"
+                      size="large"
+                      startIcon={<SaveIcon />}
+                      sx={{ fontWeight: 'bold', px: 4 }}
                     >
-                      {INDIAN_STATES.map((state) => (
-                        <MenuItem key={state.name} value={state.name}>
-                          {state.name}
-                        </MenuItem>
-                      ))}
-                    </TextField>
-                  </Grid>
-
-                  <Grid size={6}>
-                    <TextField
-                      required
-                      fullWidth
-                      label="State Code"
-                      value={settings.stateCode}
-                      onChange={(e) => handleChange('stateCode', e.target.value)}
-                      placeholder="e.g. 19"
-                      helperText="Standard numeric GST State Code"
-                    />
-                  </Grid>
+                      Save & Deploy Settings
+                    </Button>
+                  </Box>
                 </Grid>
-              </CardContent>
-            </Card>
-
-            <Card variant="outlined">
-              <CardContent sx={{ p: 3 }}>
-                <Typography variant="subtitle1" sx={{ fontWeight: 'bold', mb: 2, display: 'flex', alignItems: 'center', gap: 1 }}>
-                  Corporate Contact Details
-                </Typography>
-                <Divider sx={{ mb: 3 }} />
-
-                <Grid container spacing={2}>
-                  <Grid size={6}>
-                    <TextField
-                      required
-                      fullWidth
-                      label="Contact Mobile"
-                      value={settings.mobile}
-                      onChange={(e) => handleChange('mobile', e.target.value)}
-                      placeholder="e.g. +91 98300 12345"
-                    />
-                  </Grid>
-
-                  <Grid size={6}>
-                    <TextField
-                      required
-                      fullWidth
-                      label="Contact Email"
-                      value={settings.email}
-                      onChange={(e) => handleChange('email', e.target.value)}
-                      placeholder="e.g. billing@printopia.com"
-                    />
-                  </Grid>
-                </Grid>
-              </CardContent>
-            </Card>
-          </Grid>
-
-          {/* Legal, Signature, and Banking */}
-          <Grid size={{ xs: 12, md: 5 }}>
-            <Card variant="outlined" sx={{ mb: 3 }}>
-              <CardContent sx={{ p: 3 }}>
-                <Typography variant="subtitle1" sx={{ fontWeight: 'bold', mb: 2, display: 'flex', alignItems: 'center', gap: 1 }}>
-                  Regulatory & Signatory
-                </Typography>
-                <Divider sx={{ mb: 3 }} />
-
-                <Grid container spacing={2}>
-                  <Grid size={12}>
-                    <TextField
-                      required
-                      fullWidth
-                      label="GSTIN (Goods & Services Tax ID)"
-                      value={settings.gstin}
-                      onChange={(e) => handleChange('gstin', e.target.value)}
-                      placeholder="e.g. 19AABCP1234F1Z1"
-                    />
-                  </Grid>
-
-                  <Grid size={12}>
-                    <TextField
-                      required
-                      fullWidth
-                      label="Authorized Signatory Name"
-                      value={settings.authorizedSignatory}
-                      onChange={(e) => handleChange('authorizedSignatory', e.target.value)}
-                      placeholder="e.g. Subir Ghosal"
-                      helperText="Name printed at bottom-right under declaration"
-                    />
-                  </Grid>
-
-                  <Grid size={12}>
-                    <FormControlLabel
-                      control={
-                        <Checkbox
-                          checked={!!settings.disableInkTracking}
-                          onChange={(e) => handleChange('disableInkTracking', e.target.checked)}
-                          color="primary"
-                        />
-                      }
-                      label="Disable Ink Tracking"
-                    />
-                  </Grid>
-                </Grid>
-              </CardContent>
-            </Card>
-
-            <Card variant="outlined">
-              <CardContent sx={{ p: 3 }}>
-                <Typography variant="subtitle1" sx={{ fontWeight: 'bold', mb: 2, display: 'flex', alignItems: 'center', gap: 1 }}>
-                  Corporate Bank Details
-                </Typography>
-                <Divider sx={{ mb: 3 }} />
-
-                <Grid container spacing={2}>
-                  <Grid size={12}>
-                    <TextField
-                      required
-                      fullWidth
-                      label="Bank Name"
-                      value={settings.bankDetails.bankName}
-                      onChange={(e) => handleBankChange('bankName', e.target.value)}
-                      placeholder="e.g. HDFC Bank Ltd."
-                    />
-                  </Grid>
-
-                  <Grid size={12}>
-                    <TextField
-                      required
-                      fullWidth
-                      label="Bank Account Number"
-                      value={settings.bankDetails.accountNumber}
-                      onChange={(e) => handleBankChange('accountNumber', e.target.value)}
-                      placeholder="e.g. 50200012345678"
-                    />
-                  </Grid>
-
-                  <Grid size={12}>
-                    <TextField
-                      required
-                      fullWidth
-                      label="IFSC Code"
-                      value={settings.bankDetails.ifscCode}
-                      onChange={(e) => handleBankChange('ifscCode', e.target.value)}
-                      placeholder="e.g. HDFC0000123"
-                    />
-                  </Grid>
-
-                  <Grid size={12}>
-                    <TextField
-                      required
-                      fullWidth
-                      label="Branch Name & Location"
-                      value={settings.bankDetails.branchName}
-                      onChange={(e) => handleBankChange('branchName', e.target.value)}
-                      placeholder="e.g. Sector V Branch, Kolkata"
-                    />
-                  </Grid>
-                </Grid>
-              </CardContent>
-            </Card>
-          </Grid>
-
-          <Grid size={12}>
-            <Box sx={{ display: 'flex', justifyContent: 'flex-end', mt: 1, mb: 4 }}>
-              <Button
-                type="submit"
-                variant="contained"
-                color="primary"
-                size="large"
-                startIcon={<SaveIcon />}
-                sx={{ fontWeight: 'bold', px: 4 }}
-              >
-                Save & Deploy Settings
-              </Button>
-            </Box>
-          </Grid>
-        </Grid>
-      </form>
+              </Grid>
+            </form>
+          </Box>
+        ) : (
+          <Box sx={{ p: 3 }}>
+            <CompanyUserManagementView />
+          </Box>
+        )}
+      </Paper>
     </Container>
   );
 }

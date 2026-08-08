@@ -33,7 +33,7 @@ export class AutoPostingEngine {
   public static postTransaction(req: PostRequest): string {
     // Check Permissions (assuming Accounts or Admin role needed for Auto Posting)
     const currentUser = AuthService.getCurrentUser();
-    if (currentUser?.role === 'User') {
+    if (currentUser && currentUser.role !== 'Admin' && currentUser.role !== 'Accounts') {
       throw new Error("You do not have permission to post accounting entries.");
     }
 

@@ -17,6 +17,7 @@ export interface SheetMappingItem {
 
 export interface MachineMasterItem {
   id: string;
+  companyId?: string;
   machineName: string;
   machineCode: string;
   machineType: string;       // e.g. "Offset", "Digital", "Flexo", "Screen", "Gravure", "Letterpress"
