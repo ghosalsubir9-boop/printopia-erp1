@@ -77,8 +77,8 @@ export default function JobCardForm({ onSave, onCancel }: JobCardFormProps) {
         CustomerMasterService.getCustomers()
       ]);
       
-      // Filter for APPROVED orders (mandatory!)
-      const approvedOrders = poList.filter(o => o.status === 'Approved');
+      // Filter for APPROVED or PARTIALLY CONVERTED orders (mandatory!)
+      const approvedOrders = poList.filter(o => o.status === 'Approved' || o.status === 'Partially Converted');
       setOrders(approvedOrders);
 
       // Map product IDs to actual product codes
@@ -90,9 +90,11 @@ export default function JobCardForm({ onSave, onCancel }: JobCardFormProps) {
       setPiList(piDataList);
       setCustomerList(customerDataList);
 
-      // Track PO numbers that already have Job Cards
-      const poIdsWithCards = jcList.map(jc => jc.poId);
-      setExistingJobCards(poIdsWithCards);
+      // Track PO item IDs that already have Job Cards
+      const poItemIdsWithCards = jcList
+        .filter(jc => jc.status !== 'Cancelled')
+        .map(jc => jc.productionOrderItemId || '');
+      setExistingJobCards(poItemIdsWithCards);
     } catch (err) {
       setError('Failed to load data from storage.');
     } finally {
@@ -141,19 +143,35 @@ export default function JobCardForm({ onSave, onCancel }: JobCardFormProps) {
     }));
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleCreateJobCardForItem = async (item: any) => {
+    setError(null);
+    setSuccess(null);
+
+    const custom = itemInstructions[item.id] || {
+      selectedUps: item.planning?.ups || 1,
+      lamination: 'Not specified',
+      binding: 'Not specified',
+      specialProcess: 'Not specified',
+      remarks: item.planning?.factoryNotes || 'Not specified',
+      fileAccessories: item.fileAccessories || 'None',
+      layoutData: item.layoutData,
+      printingDirection: 'Not specified',
+      frontColour: 'Not specified',
+      backColour: 'Not specified',
+      colourSequence: 'Not specified',
+      specialNotes: 'Not specified'
+    };
+
     if (!selectedPO) {
       setError('Please select an Approved Production Order to proceed.');
       return;
     }
 
-    if (existingJobCards.includes(selectedPO.id)) {
-      setError(`A Job Card already exists for Production Order ${selectedPO.poNumber}.`);
+    if (!designer.trim()) {
+      setError(`Please assign a Designer before creating the Job Card.`);
       return;
     }
 
-    // Comprehensive validation for mandatory fields
     const missingFields: string[] = [];
     if (!selectedPO.piId || !selectedPO.piNumber) {
       missingFields.push("Linked Proforma Invoice (PI) Number");
@@ -171,34 +189,31 @@ export default function JobCardForm({ onSave, onCancel }: JobCardFormProps) {
       missingFields.push("Sales Executive");
     }
 
-    selectedPO.items.forEach((item, index) => {
-      const itemNum = index + 1;
-      const actualCode = productCodeMap[item.productId];
-      if (!actualCode) {
-        missingFields.push(`Product Master Code for Item #${itemNum} (${item.productName})`);
-      }
-      if (!item.productId || !item.productName) {
-        missingFields.push(`Product Info (ID or Name) for Item #${itemNum}`);
-      }
-      if (!item.quantity || item.quantity <= 0) {
-        missingFields.push(`Quantity for Item #${itemNum}`);
-      }
-      if (!item.paperType) {
-        missingFields.push(`Paper Selection for Item #${itemNum}`);
-      }
-      if (!item.gsm) {
-        missingFields.push(`GSM for Item #${itemNum}`);
-      }
-      if (!item.planning?.machineName) {
-        missingFields.push(`Planning Machine for Item #${itemNum}`);
-      }
-      if (item.planning?.requiredParentSheets === undefined || item.planning?.requiredParentSheets === null) {
-        missingFields.push(`Required Parent Sheets for Item #${itemNum}`);
-      }
-      if (item.planning?.plateQty === undefined || item.planning?.plateQty === null) {
-        missingFields.push(`Plate Quantity for Item #${itemNum}`);
-      }
-    });
+    const actualCode = productCodeMap[item.productId];
+    if (!actualCode) {
+      missingFields.push(`Product Master Code for ${item.productName}`);
+    }
+    if (!item.productId || !item.productName) {
+      missingFields.push("Product Info (ID or Name)");
+    }
+    if (!item.quantity || item.quantity <= 0) {
+      missingFields.push("Quantity");
+    }
+    if (!item.paperType) {
+      missingFields.push("Paper Selection");
+    }
+    if (!item.gsm) {
+      missingFields.push("GSM");
+    }
+    if (!item.planning?.machineName) {
+      missingFields.push("Planning Machine");
+    }
+    if (item.planning?.requiredParentSheets === undefined || item.planning?.requiredParentSheets === null) {
+      missingFields.push("Required Parent Sheets");
+    }
+    if (item.planning?.plateQty === undefined || item.planning?.plateQty === null) {
+      missingFields.push("Plate Quantity");
+    }
 
     if (missingFields.length > 0) {
       setError(`Cannot generate Job Card. The following mandatory production values are missing: ${missingFields.join(', ')}.`);
@@ -206,57 +221,52 @@ export default function JobCardForm({ onSave, onCancel }: JobCardFormProps) {
     }
 
     try {
-      // Prepare job card items
-      const jobCardItems: Omit<JobCardItem, 'id' | 'jobCardId'>[] = selectedPO.items.map(item => {
-        const custom = itemInstructions[item.id];
-        const actualProductCode = productCodeMap[item.productId] || 'Not specified';
-        return {
-          jobItemId: item.id,
-          productId: item.productId,
-          productName: item.productName,
-          productCode: actualProductCode,
-          specification: `${item.openSize} Open / ${item.closeSize} Close`,
-          quantity: item.quantity,
-          paper: item.paperType,
-          gsm: item.gsm,
-          sheetSize: item.planning?.parentSheet || 'Not specified',
-          suggestedUps: item.planning?.ups || 1,
-          selectedUps: Number(custom.selectedUps),
-          printingSide: item.printingSide,
-          colour: item.colour,
-          machine: item.planning?.machineName || 'Not specified',
-          plate: item.planning?.plateQty ? `${item.planning.plateQty} Plates` : 'Not specified',
-          cutting: item.planning?.cutting || 'Not specified',
-          lamination: custom.lamination || 'Not specified',
-          binding: custom.binding || 'Not specified',
-          fileAccessories: custom.fileAccessories || 'None',
-          layoutData: custom.layoutData,
-          specialProcess: custom.specialProcess || 'Not specified',
-          remarks: custom.remarks || 'Not specified',
-          printingDirection: custom.printingDirection || 'Not specified',
-          frontColour: custom.frontColour || 'Not specified',
-          backColour: custom.backColour || 'Not specified',
-          colourSequence: custom.colourSequence || 'Not specified',
-          specialNotes: custom.specialNotes || 'Not specified',
-          status: 'Created',
-          materials: {
-            id: `jcm-${Date.now()}-${item.id}`,
-            jobCardItemId: '',
-            paperEstimated: item.planning?.requiredParentSheets || 0,
-            paperActual: 0, 
-            paperUnit: 'Sheets',
-            plateEstimated: item.planning?.plateQty || 0,
-            plateActual: 0, 
-            plateUnit: 'Plates',
-            inkEstimated: 0,
-            inkActual: 0, 
-            inkUnit: 'Kg',
-            otherEstimated: 0,
-            otherActual: 0,
-            otherUnit: 'N/A'
-          }
-        };
-      });
+      const singleJobCardItem = {
+        jobItemId: item.id,
+        productId: item.productId,
+        productName: item.productName,
+        productCode: actualCode || 'Not specified',
+        specification: `${item.openSize || 'N/A'} Open / ${item.closeSize || 'N/A'} Close`,
+        quantity: item.quantity,
+        paper: item.paperType,
+        gsm: item.gsm,
+        sheetSize: item.planning?.parentSheet || 'Not specified',
+        suggestedUps: item.planning?.ups || 1,
+        selectedUps: Number(custom.selectedUps),
+        printingSide: item.printingSide || 'Single Side',
+        colour: item.colour || '4 Colour',
+        machine: item.planning?.machineName || 'Not specified',
+        plate: item.planning?.plateQty ? `${item.planning.plateQty} Plates` : 'Not specified',
+        cutting: item.planning?.cutting || 'Not specified',
+        lamination: custom.lamination || 'Not specified',
+        binding: custom.binding || 'Not specified',
+        fileAccessories: custom.fileAccessories || 'None',
+        layoutData: custom.layoutData,
+        specialProcess: custom.specialProcess || 'Not specified',
+        remarks: custom.remarks || 'Not specified',
+        printingDirection: custom.printingDirection || 'Not specified',
+        frontColour: custom.frontColour || 'Not specified',
+        backColour: custom.backColour || 'Not specified',
+        colourSequence: custom.colourSequence || 'Not specified',
+        specialNotes: custom.specialNotes || 'Not specified',
+        status: 'Created' as const,
+        materials: {
+          id: `jcm-${Date.now()}-${item.id}`,
+          jobCardItemId: '',
+          paperEstimated: item.planning?.requiredParentSheets || 0,
+          paperActual: 0, 
+          paperUnit: 'Sheets',
+          plateEstimated: item.planning?.plateQty || 0,
+          plateActual: 0, 
+          plateUnit: 'Plates',
+          inkEstimated: 0,
+          inkActual: 0, 
+          inkUnit: 'Kg',
+          otherEstimated: 0,
+          otherActual: 0,
+          otherUnit: 'N/A'
+        }
+      };
 
       const matchingPI = piList.find(pi => pi.id === selectedPO.piId);
       const matchingCustomer = customerList.find(c => c.id === selectedPO.customerId);
@@ -271,19 +281,63 @@ export default function JobCardForm({ onSave, onCancel }: JobCardFormProps) {
         salesExecutive: selectedPO.salesExecutive,
         priority: selectedPO.priority,
         expectedDeliveryDate: selectedPO.deliveryDate,
-        items: jobCardItems,
+        items: [singleJobCardItem],
         artwork: {
           artworkVersion,
           artworkStatus: 'Pending',
           designer,
           artworkNotes
-        }
+        },
+
+        // Top level traceability fields
+        productionOrderId: selectedPO.id,
+        productionOrderNumber: selectedPO.poNumber,
+        productionOrderItemId: item.id,
+
+        proformaInvoiceId: selectedPO.piId,
+        proformaInvoiceNumber: selectedPO.piNumber,
+        proformaInvoiceItemId: item.proformaInvoiceItemId,
+
+        quotationId: selectedPO.quotationId || matchingPI?.quotationId,
+        quotationItemId: item.quotationOptionId,
+        quotationOptionId: item.quotationOptionId,
+
+        customerId: selectedPO.customerId,
+        productId: item.productId,
+        productName: item.productName,
+        quantity: item.quantity,
+
+        specifications: `${item.openSize || 'N/A'} Open / ${item.closeSize || 'N/A'} Close`,
+
+        suggestedParentSheet: item.planning?.parentSheet,
+        finalParentSheet: item.planning?.parentSheet,
+        suggestedUps: item.planning?.ups,
+        finalUps: Number(custom.selectedUps),
+        suggestedMachine: item.planning?.machineName,
+        finalMachine: item.planning?.machineName,
+        suggestedPlate: item.planning?.plateQty ? `${item.planning.plateQty} Plates` : undefined,
+        finalPlate: item.planning?.plateQty ? `${item.planning.plateQty} Plates` : undefined,
+
+        netSheets: Math.ceil(item.quantity / Number(custom.selectedUps)),
+        manualWastage: item.planning?.manualWastage || 0,
+        totalRequiredSheets: item.planning?.requiredParentSheets || 0
       });
 
-      setSuccess('Job Card generated successfully!');
-      setTimeout(() => {
-        onSave();
-      }, 1000);
+      setSuccess(`Job Card for ${item.productName} generated successfully!`);
+      
+      // Reload states
+      const updatedJcList = await JobCardApiService.getJobCards();
+      const updatedPoItemIdsWithCards = updatedJcList
+        .filter(jc => jc.status !== 'Cancelled')
+        .map(jc => jc.productionOrderItemId || '');
+      setExistingJobCards(updatedPoItemIdsWithCards);
+
+      const hasUnconverted = selectedPO.items.some(it => !updatedPoItemIdsWithCards.includes(it.id));
+      if (!hasUnconverted) {
+        setTimeout(() => {
+          onSave();
+        }, 1200);
+      }
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Failed to create Job Card.';
       setError(message);
@@ -302,7 +356,7 @@ export default function JobCardForm({ onSave, onCancel }: JobCardFormProps) {
       {error && <Alert severity="error" sx={{ mb: 3 }}>{error}</Alert>}
       {success && <Alert severity="success" sx={{ mb: 3 }}>{success}</Alert>}
 
-      <form onSubmit={handleSubmit}>
+      <Box>
         <Grid container spacing={3}>
           {/* Section 1: Select Approved PO */}
           <Grid size={{ xs: 12 }}>
@@ -321,10 +375,10 @@ export default function JobCardForm({ onSave, onCancel }: JobCardFormProps) {
                     >
                       <MenuItem value="" disabled>Select Production Order</MenuItem>
                       {orders.map((po) => {
-                        const hasCard = existingJobCards.includes(po.id);
+                        const allConverted = po.items.every(item => existingJobCards.includes(item.id));
                         return (
-                          <MenuItem key={po.id} value={po.id} disabled={hasCard}>
-                            {po.poNumber} - {po.customerName} {hasCard ? ' (Job Card Already Generated)' : ''}
+                          <MenuItem key={po.id} value={po.id} disabled={allConverted}>
+                            {po.poNumber} - {po.customerName} {allConverted ? ' (All Items Converted)' : ''}
                           </MenuItem>
                         );
                       })}
@@ -451,11 +505,13 @@ export default function JobCardForm({ onSave, onCancel }: JobCardFormProps) {
                       specialNotes: ''
                     };
 
+                    const isConverted = existingJobCards.includes(item.id);
+
                     return (
-                      <Card key={item.id} sx={{ mb: 4, border: '1px solid #e2e8f0', boxShadow: 'none' }}>
-                        <Box sx={{ bgcolor: 'primary.main', color: 'white', px: 2, py: 1.5, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <Card key={item.id} sx={{ mb: 4, border: '1px solid #e2e8f0', boxShadow: 'none', opacity: isConverted ? 0.8 : 1 }}>
+                        <Box sx={{ bgcolor: isConverted ? 'grey.600' : 'primary.main', color: 'white', px: 2, py: 1.5, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                           <Typography variant="subtitle2" sx={{ fontWeight: 'bold' }}>
-                            Item #{index + 1}: {item.productName}
+                            Item #{index + 1}: {item.productName} {isConverted ? ' (CONVERTED)' : ''}
                           </Typography>
                           <Typography variant="body2" sx={{ fontWeight: 'bold' }}>
                             Qty: {item.quantity} | Paper: {item.paperType} ({item.gsm} GSM)
@@ -463,120 +519,144 @@ export default function JobCardForm({ onSave, onCancel }: JobCardFormProps) {
                         </Box>
                         
                         <CardContent sx={{ p: 3 }}>
-                          <Grid container spacing={2.5}>
-                            {/* Line 1: UPS & Process Specs */}
-                            <Grid size={{ xs: 12, sm: 4, md: 2 }}>
-                              <TextField
-                                label="Suggested UPS"
-                                type="number"
-                                fullWidth
-                                disabled
-                                value={item.planning?.ups || 1}
-                              />
-                            </Grid>
-                            <Grid size={{ xs: 12, sm: 4, md: 2 }}>
-                              <TextField
-                                label="Selected UPS"
-                                type="number"
-                                fullWidth
-                                required
-                                value={custom.selectedUps}
-                                onChange={(e) => handleItemOverride(item.id, 'selectedUps', Number(e.target.value))}
-                              />
-                            </Grid>
-                            <Grid size={{ xs: 12, sm: 4, md: 4 }}>
-                              <TextField
-                                label="Lamination Specs"
-                                fullWidth
-                                value={custom.lamination}
-                                onChange={(e) => handleItemOverride(item.id, 'lamination', e.target.value)}
-                              />
-                            </Grid>
-                            <Grid size={{ xs: 12, sm: 6, md: 4 }}>
-                              <TextField
-                                label="Binding Instruction"
-                                fullWidth
-                                value={custom.binding}
-                                onChange={(e) => handleItemOverride(item.id, 'binding', e.target.value)}
-                              />
-                            </Grid>
-                            <Grid size={{ xs: 12, sm: 6, md: 4 }}>
-                              <TextField
-                                select
-                                label="File Accessories"
-                                fullWidth
-                                value={custom.fileAccessories}
-                                onChange={(e) => handleItemOverride(item.id, 'fileAccessories', e.target.value as any)}
-                              >
-                                <MenuItem value="None">None</MenuItem>
-                                <MenuItem value="Clip">Clip</MenuItem>
-                                <MenuItem value="Pocket">Pocket</MenuItem>
-                                <MenuItem value="Clip + Pocket">Clip + Pocket</MenuItem>
-                              </TextField>
-                            </Grid>
+                          {isConverted ? (
+                            <Box sx={{ py: 3, textAlign: 'center', bgcolor: 'grey.50', borderRadius: 2 }}>
+                              <Typography variant="subtitle1" sx={{ fontWeight: 'bold', color: 'success.main', mb: 1 }}>
+                                Job Card Already Created
+                              </Typography>
+                              <Typography variant="body2" color="text.secondary">
+                                An active Job Card has already been generated for this Production Order Item.
+                              </Typography>
+                            </Box>
+                          ) : (
+                            <Grid container spacing={2.5}>
+                              {/* Line 1: UPS & Process Specs */}
+                              <Grid size={{ xs: 12, sm: 4, md: 2 }}>
+                                <TextField
+                                  label="Suggested UPS"
+                                  type="number"
+                                  fullWidth
+                                  disabled
+                                  value={item.planning?.ups || 1}
+                                />
+                              </Grid>
+                              <Grid size={{ xs: 12, sm: 4, md: 2 }}>
+                                <TextField
+                                  label="Selected UPS"
+                                  type="number"
+                                  fullWidth
+                                  required
+                                  value={custom.selectedUps}
+                                  onChange={(e) => handleItemOverride(item.id, 'selectedUps', Number(e.target.value))}
+                                />
+                              </Grid>
+                              <Grid size={{ xs: 12, sm: 4, md: 4 }}>
+                                <TextField
+                                  label="Lamination Specs"
+                                  fullWidth
+                                  value={custom.lamination}
+                                  onChange={(e) => handleItemOverride(item.id, 'lamination', e.target.value)}
+                                />
+                              </Grid>
+                              <Grid size={{ xs: 12, sm: 6, md: 4 }}>
+                                <TextField
+                                  label="Binding Instruction"
+                                  fullWidth
+                                  value={custom.binding}
+                                  onChange={(e) => handleItemOverride(item.id, 'binding', e.target.value)}
+                                />
+                              </Grid>
+                              <Grid size={{ xs: 12, sm: 6, md: 4 }}>
+                                <TextField
+                                  select
+                                  label="File Accessories"
+                                  fullWidth
+                                  value={custom.fileAccessories}
+                                  onChange={(e) => handleItemOverride(item.id, 'fileAccessories', e.target.value as any)}
+                                >
+                                  <MenuItem value="None">None</MenuItem>
+                                  <MenuItem value="Clip">Clip</MenuItem>
+                                  <MenuItem value="Pocket">Pocket</MenuItem>
+                                  <MenuItem value="Clip + Pocket">Clip + Pocket</MenuItem>
+                                </TextField>
+                              </Grid>
 
-                            {/* Line 2: Technical printing overrides */}
-                            <Grid size={{ xs: 12, sm: 6, md: 3 }}>
-                              <TextField
-                                label="Printing Direction"
-                                fullWidth
-                                value={custom.printingDirection}
-                                onChange={(e) => handleItemOverride(item.id, 'printingDirection', e.target.value)}
-                              />
-                            </Grid>
-                            <Grid size={{ xs: 12, sm: 6, md: 3 }}>
-                              <TextField
-                                label="Front Printing Color"
-                                fullWidth
-                                value={custom.frontColour}
-                                onChange={(e) => handleItemOverride(item.id, 'frontColour', e.target.value)}
-                              />
-                            </Grid>
-                            <Grid size={{ xs: 12, sm: 6, md: 3 }}>
-                              <TextField
-                                label="Back Printing Color"
-                                fullWidth
-                                value={custom.backColour}
-                                onChange={(e) => handleItemOverride(item.id, 'backColour', e.target.value)}
-                              />
-                            </Grid>
-                            <Grid size={{ xs: 12, sm: 6, md: 3 }}>
-                              <TextField
-                                label="Color Sequence"
-                                fullWidth
-                                value={custom.colourSequence}
-                                onChange={(e) => handleItemOverride(item.id, 'colourSequence', e.target.value)}
-                              />
-                            </Grid>
+                              {/* Line 2: Technical printing overrides */}
+                              <Grid size={{ xs: 12, sm: 6, md: 3 }}>
+                                <TextField
+                                  label="Printing Direction"
+                                  fullWidth
+                                  value={custom.printingDirection}
+                                  onChange={(e) => handleItemOverride(item.id, 'printingDirection', e.target.value)}
+                                />
+                              </Grid>
+                              <Grid size={{ xs: 12, sm: 6, md: 3 }}>
+                                <TextField
+                                  label="Front Printing Color"
+                                  fullWidth
+                                  value={custom.frontColour}
+                                  onChange={(e) => handleItemOverride(item.id, 'frontColour', e.target.value)}
+                                />
+                              </Grid>
+                              <Grid size={{ xs: 12, sm: 6, md: 3 }}>
+                                <TextField
+                                  label="Back Printing Color"
+                                  fullWidth
+                                  value={custom.backColour}
+                                  onChange={(e) => handleItemOverride(item.id, 'backColour', e.target.value)}
+                                />
+                              </Grid>
+                              <Grid size={{ xs: 12, sm: 6, md: 3 }}>
+                                <TextField
+                                  label="Color Sequence"
+                                  fullWidth
+                                  value={custom.colourSequence}
+                                  onChange={(e) => handleItemOverride(item.id, 'colourSequence', e.target.value)}
+                                />
+                              </Grid>
 
-                            {/* Line 3: Special processing & notes */}
-                            <Grid size={{ xs: 12, sm: 6 }}>
-                              <TextField
-                                label="Special Process (E.g. Foil, Spot UV)"
-                                fullWidth
-                                value={custom.specialProcess}
-                                onChange={(e) => handleItemOverride(item.id, 'specialProcess', e.target.value)}
-                              />
+                              {/* Line 3: Special processing & notes */}
+                              <Grid size={{ xs: 12, sm: 6 }}>
+                                <TextField
+                                  label="Special Process (E.g. Foil, Spot UV)"
+                                  fullWidth
+                                  value={custom.specialProcess}
+                                  onChange={(e) => handleItemOverride(item.id, 'specialProcess', e.target.value)}
+                                />
+                              </Grid>
+                              <Grid size={{ xs: 12, sm: 6 }}>
+                                <TextField
+                                  label="Planning Remarks / overrides"
+                                  fullWidth
+                                  value={custom.remarks}
+                                  onChange={(e) => handleItemOverride(item.id, 'remarks', e.target.value)}
+                                />
+                              </Grid>
+                              <Grid size={{ xs: 12 }}>
+                                <TextField
+                                  label="Special Instructions & Quality Criteria"
+                                  fullWidth
+                                  multiline
+                                  rows={2}
+                                  value={custom.specialNotes}
+                                  onChange={(e) => handleItemOverride(item.id, 'specialNotes', e.target.value)}
+                                />
+                              </Grid>
+
+                              {/* Create button */}
+                              <Grid size={{ xs: 12 }} sx={{ display: 'flex', justifyContent: 'flex-end', mt: 3 }}>
+                                <Button
+                                  variant="contained"
+                                  color="success"
+                                  startIcon={<SaveIcon />}
+                                  onClick={() => handleCreateJobCardForItem(item)}
+                                  sx={{ fontWeight: 'bold', px: 4, py: 1 }}
+                                >
+                                  Create Job Card for {item.productName}
+                                </Button>
+                              </Grid>
                             </Grid>
-                            <Grid size={{ xs: 12, sm: 6 }}>
-                              <TextField
-                                label="Planning Remarks / overrides"
-                                fullWidth
-                                value={custom.remarks}
-                                onChange={(e) => handleItemOverride(item.id, 'remarks', e.target.value)}
-                              />
-                            </Grid>
-                            <Grid size={{ xs: 12 }}>
-                              <TextField
-                                label="Special Instructions & Quality Criteria"
-                                fullWidth
-                                multiline
-                                rows={2}
-                                value={custom.specialNotes}
-                                onChange={(e) => handleItemOverride(item.id, 'specialNotes', e.target.value)}
-                              />
-                            </Grid>
-                          </Grid>
+                          )}
                         </CardContent>
                       </Card>
                     );
@@ -586,20 +666,12 @@ export default function JobCardForm({ onSave, onCancel }: JobCardFormProps) {
 
               {/* Submit panel */}
               <Grid size={{ xs: 12 }} sx={{ display: 'flex', justifyContent: 'flex-end', gap: 2 }}>
-                <Button variant="outlined" onClick={onCancel} sx={{ px: 4, py: 1.2 }}>Cancel</Button>
-                <Button
-                  type="submit"
-                  variant="contained"
-                  startIcon={<SaveIcon />}
-                  sx={{ px: 4, py: 1.2, fontWeight: 'bold' }}
-                >
-                  Generate Job Card
-                </Button>
+                <Button variant="outlined" onClick={onCancel} sx={{ px: 4, py: 1.2 }}>Close</Button>
               </Grid>
             </>
           )}
         </Grid>
-      </form>
+      </Box>
     </Box>
   );
 }

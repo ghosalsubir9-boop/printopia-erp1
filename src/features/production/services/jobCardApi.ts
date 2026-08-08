@@ -17,7 +17,8 @@ import {
   OperatorAction,
   CreateJobCardRequest,
   JobCardItemCreateInput,
-  QCStatus
+  QCStatus,
+  POStatus
 } from '../types';
 import { ProductionApiService } from './api';
 import { PaperIssueApiService } from './paperIssueApi';
@@ -447,15 +448,20 @@ export class DevelopmentLocalJobCardRepository {
       throw new Error('Access Denied: The linked Production Order does not belong to your organization.');
     }
 
-    // 3. Validate status is Approved
-    if (po.status !== 'Approved') {
-      throw new Error(`Cannot generate Job Card. Production Order '${po.poNumber}' must be Approved (current status: '${po.status}').`);
+    // 3. Validate status is Approved (or Converted to Production/Partially Converted which are valid conversion source states)
+    if (po.status !== 'Approved' && po.status !== 'Partially Converted' && po.status !== 'In Production') {
+      throw new Error(`Cannot generate Job Card. Production Order '${po.poNumber}' must be Approved or active (current status: '${po.status}').`);
     }
 
-    // 4. Duplicate protection: PO must not already have an active Job Card
-    const duplicate = list.find(jc => jc.poId === jobCardData.poId && jc.companyId === companyId && jc.status !== 'Cancelled');
+    const productionOrderItemId = jobCardData.productionOrderItemId;
+    if (!productionOrderItemId) {
+      throw new Error('productionOrderItemId is required to create a Job Card.');
+    }
+
+    // 4. Duplicate protection: PO item must not already have an active Job Card
+    const duplicate = list.find(jc => jc.productionOrderItemId === productionOrderItemId && jc.companyId === companyId && jc.status !== 'Cancelled');
     if (duplicate) {
-      throw new Error(`A Job Card (${duplicate.jobCardNumber}) has already been generated for Production Order '${jobCardData.poNumber}'.`);
+      throw new Error('Job Card Already Created');
     }
 
     // 5. Generate JC Number using tenant-aware sequential FY numbering e.g. JC/2026-27/0001
@@ -478,6 +484,10 @@ export class DevelopmentLocalJobCardRepository {
     const jobCardNumber = `${prefix}${String(nextSeq).padStart(4, '0')}`;
     const id = `jc-${Date.now()}`;
     const timestamp = new Date().toISOString();
+
+    const currentUser = AuthService.getCurrentUser();
+    const createdByUserId = currentUser?.userId || 'System';
+    const createdByName = currentUser?.userName || 'System';
 
     const newJobCard: JobCard = {
       id,
@@ -517,16 +527,73 @@ export class DevelopmentLocalJobCardRepository {
           id: `jch-${Date.now()}`,
           stage: 'Created',
           timestamp,
-          user: jobCardData.salesExecutive || 'System',
-          remarks: 'Job Card automatically generated from Approved Production Order.'
+          user: createdByName,
+          remarks: 'Job Card automatically generated from Approved Production Order Item.'
         }
       ],
       createdAt: timestamp,
-      updatedAt: timestamp
+      updatedAt: timestamp,
+
+      productionOrderId: jobCardData.poId,
+      productionOrderNumber: jobCardData.poNumber,
+      productionOrderItemId: productionOrderItemId,
+
+      proformaInvoiceId: jobCardData.proformaInvoiceId,
+      proformaInvoiceNumber: jobCardData.proformaInvoiceNumber,
+      proformaInvoiceItemId: jobCardData.proformaInvoiceItemId,
+
+      quotationId: jobCardData.quotationId,
+      quotationItemId: jobCardData.quotationItemId,
+      quotationOptionId: jobCardData.quotationOptionId,
+
+      customerId: jobCardData.customerId,
+      productId: jobCardData.productId,
+      productName: jobCardData.productName || (jobCardData.items[0]?.productName || ''),
+      quantity: jobCardData.quantity || (jobCardData.items[0]?.quantity || 0),
+
+      specifications: jobCardData.specifications,
+
+      suggestedParentSheet: jobCardData.suggestedParentSheet || jobCardData.items[0]?.paper,
+      finalParentSheet: jobCardData.finalParentSheet || jobCardData.items[0]?.sheetSize,
+      suggestedUps: jobCardData.suggestedUps || jobCardData.items[0]?.suggestedUps,
+      finalUps: jobCardData.finalUps || jobCardData.items[0]?.selectedUps,
+      suggestedMachine: jobCardData.suggestedMachine || jobCardData.items[0]?.machine,
+      finalMachine: jobCardData.finalMachine || jobCardData.items[0]?.machine,
+      suggestedPlate: jobCardData.suggestedPlate || jobCardData.items[0]?.plate,
+      finalPlate: jobCardData.finalPlate || jobCardData.items[0]?.plate,
+
+      netSheets: jobCardData.netSheets || jobCardData.items[0]?.materials?.paperEstimated,
+      manualWastage: jobCardData.manualWastage || 0,
+      totalRequiredSheets: jobCardData.totalRequiredSheets || jobCardData.items[0]?.materials?.paperEstimated,
+
+      createdByUserId,
+      createdByName
     };
 
     list.push(newJobCard);
     this.saveJobCards(list);
+
+    // After creating a Job Card, check and update the PO's conversion status.
+    const allJobCards = list.filter(jc => jc.companyId === companyId && jc.status !== 'Cancelled');
+    const poJobCards = allJobCards.filter(jc => jc.poId === jobCardData.poId);
+    
+    // Check total items of the PO
+    const totalItems = po.items.length;
+    const convertedCount = poJobCards.length;
+
+    let newPoStatus: POStatus = 'Approved';
+    if (convertedCount === 0) {
+      newPoStatus = 'Approved';
+    } else if (convertedCount < totalItems) {
+      newPoStatus = 'Partially Converted';
+    } else {
+      newPoStatus = 'Fully Converted';
+    }
+
+    if (po.status !== newPoStatus) {
+      await ProductionApiService.updateOrder(jobCardData.poId, { status: newPoStatus });
+    }
+
     return newJobCard;
   }
 

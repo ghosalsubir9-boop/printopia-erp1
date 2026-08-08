@@ -85,7 +85,7 @@ export default function ProductionOrderForm({
       const pis = await PIApiService.getInvoices();
       // Filter strictly for production-approved PIs that are not cancelled
       const approved = pis.filter(pi => 
-        (pi.productionApproved || pi.isProductionApproved || pi.status === 'Production Approved' || pi.status === 'Converted to Production') &&
+        pi.productionApproved === true &&
         pi.status !== 'Cancelled'
       );
       setApprovedPIs(approved);

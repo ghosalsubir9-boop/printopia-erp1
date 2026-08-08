@@ -9,7 +9,34 @@ const STORAGE_KEY = 'printopia_proforma_invoices';
 export class PIApiService {
   private static getStoredInvoices(): ProformaInvoice[] {
     const stored = localStorage.getItem(STORAGE_KEY);
-    return stored ? JSON.parse(stored) : [];
+    if (!stored) return [];
+    try {
+      const invoices = JSON.parse(stored) as ProformaInvoice[];
+      let updated = false;
+      const migrated = invoices.map(pi => {
+        if (
+          (pi.status === 'Production Approved' || pi.isProductionApproved === true) &&
+          pi.productionApproved === undefined
+        ) {
+          pi.productionApproved = true;
+          if (pi.productionApprovedAt === undefined) {
+            pi.productionApprovedAt = (pi as any).approvedAt || (pi as any).productionApprovedAt;
+          }
+          if (pi.productionApprovedBy === undefined) {
+            pi.productionApprovedBy = (pi as any).approvedBy || (pi as any).productionApprovedBy;
+          }
+          updated = true;
+        }
+        return pi;
+      });
+      if (updated) {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(migrated));
+      }
+      return migrated;
+    } catch (e) {
+      console.error('Error reading proforma invoices from LocalStorage:', e);
+      return [];
+    }
   }
 
   private static setStoredInvoices(invoices: ProformaInvoice[]): void {
@@ -87,7 +114,7 @@ export class PIApiService {
    * Checks if a PI is eligible for production approval based on company release rules
    */
   static canApproveForProduction(pi: ProformaInvoice): { canApprove: boolean; reason?: string } {
-    if (pi.productionApproved || pi.isProductionApproved) {
+    if (pi.productionApproved === true) {
       return { canApprove: true };
     }
     const check = this.getProductionApprovalEligibility(pi);
@@ -101,7 +128,7 @@ export class PIApiService {
     if (pi.status === 'Cancelled') {
       return { canConvert: false, reason: 'Proforma Invoice is cancelled.' };
     }
-    if (pi.productionApproved || pi.isProductionApproved || pi.status === 'Production Approved' || pi.status === 'Converted to Production') {
+    if (pi.productionApproved === true) {
       return { canConvert: true };
     }
 

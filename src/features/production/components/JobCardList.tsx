@@ -44,8 +44,8 @@ import { JobCardApiService } from '../services/jobCardApi';
 interface JobCardListProps {
   onSelect: (jobCard: JobCard) => void;
   onAdd: () => void;
-  currentRole: 'Admin' | 'Sales' | 'Designer' | 'Production' | 'QC' | 'Dispatch' | 'Accounts';
-  onRoleChange: (role: 'Admin' | 'Sales' | 'Designer' | 'Production' | 'QC' | 'Dispatch' | 'Accounts') => void;
+  currentRole: 'SUPER_ADMIN' | 'COMPANY_ADMIN' | 'SALES_EXECUTIVE' | 'DESIGNER' | 'PRINTER' | 'ACCOUNTS';
+  onRoleChange: (role: 'SUPER_ADMIN' | 'COMPANY_ADMIN' | 'SALES_EXECUTIVE' | 'DESIGNER' | 'PRINTER' | 'ACCOUNTS') => void;
 }
 
 const statusColors: Record<JobCardStatus, "default" | "primary" | "secondary" | "error" | "info" | "success" | "warning"> = {
@@ -120,7 +120,7 @@ export default function JobCardList({ onSelect, onAdd, currentRole, onRoleChange
   };
 
   const handleRoleSelection = (e: React.ChangeEvent<HTMLInputElement>) => {
-    onRoleChange(e.target.value as 'Admin' | 'Sales' | 'Designer' | 'Production' | 'QC' | 'Dispatch' | 'Accounts');
+    onRoleChange(e.target.value as 'SUPER_ADMIN' | 'COMPANY_ADMIN' | 'SALES_EXECUTIVE' | 'DESIGNER' | 'PRINTER' | 'ACCOUNTS');
   };
 
   return (
@@ -140,18 +140,17 @@ export default function JobCardList({ onSelect, onAdd, currentRole, onRoleChange
             size="small"
             value={currentRole}
             onChange={handleRoleSelection}
-            sx={{ minWidth: 160 }}
+            sx={{ minWidth: 200 }}
           >
-            <MenuItem value="Admin">Admin (Full Access)</MenuItem>
-            <MenuItem value="Sales">Sales (View Only)</MenuItem>
-            <MenuItem value="Designer">Designer (Artwork Only)</MenuItem>
-            <MenuItem value="Production">Production (Run Logs)</MenuItem>
-            <MenuItem value="QC">QC (QC Only)</MenuItem>
-            <MenuItem value="Dispatch">Dispatch (Dispatch Only)</MenuItem>
-            <MenuItem value="Accounts">Accounts (Read Only)</MenuItem>
+            <MenuItem value="SUPER_ADMIN">SUPER_ADMIN (Full Access)</MenuItem>
+            <MenuItem value="COMPANY_ADMIN">COMPANY_ADMIN (Full Access)</MenuItem>
+            <MenuItem value="SALES_EXECUTIVE">SALES_EXECUTIVE (View Only)</MenuItem>
+            <MenuItem value="DESIGNER">DESIGNER (Artwork Only)</MenuItem>
+            <MenuItem value="PRINTER">PRINTER (Run Logs & Operations)</MenuItem>
+            <MenuItem value="ACCOUNTS">ACCOUNTS (Read Only)</MenuItem>
           </TextField>
 
-          {currentRole !== 'Sales' && currentRole !== 'Accounts' && currentRole !== 'Designer' && (
+          {currentRole !== 'SALES_EXECUTIVE' && currentRole !== 'ACCOUNTS' && currentRole !== 'DESIGNER' && (
             <Button
               variant="contained"
               startIcon={<AddIcon />}

@@ -125,9 +125,10 @@ export class ProductionApiService {
     }
 
     // 4. Validate explicit production approval
-    const isApproved = pi.productionApproved || pi.isProductionApproved || pi.status === 'Production Approved' || pi.status === 'Converted to Production';
-    if (!isApproved) {
-      throw new Error('Proforma Invoice requires explicit Production Approval by Admin before a Production Order can be created.');
+    if (pi.productionApproved !== true) {
+      throw new Error(
+        'Production Order cannot be created until the Proforma Invoice is explicitly approved for production.'
+      );
     }
 
     const list = this.getStoredOrders();

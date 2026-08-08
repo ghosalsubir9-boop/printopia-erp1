@@ -61,7 +61,7 @@ import { LayoutLegend } from '../../estimate/job-entry/components/LayoutLegend';
 
 interface JobCardDetailsProps {
   jobCard: JobCard;
-  currentRole: 'Admin' | 'Sales' | 'Designer' | 'Production' | 'QC' | 'Dispatch' | 'Accounts';
+  currentRole: 'SUPER_ADMIN' | 'COMPANY_ADMIN' | 'SALES_EXECUTIVE' | 'DESIGNER' | 'PRINTER' | 'ACCOUNTS';
   onBack: () => void;
   onUpdate: () => void;
 }
@@ -139,12 +139,12 @@ export default function JobCardDetails({ jobCard, currentRole, onBack, onUpdate 
   const [transitionRemarks, setTransitionRemarks] = useState('');
 
   // Permission checkers
-  const isReadOnly = currentRole === 'Sales' || currentRole === 'Accounts';
-  const canUpdateArtwork = currentRole === 'Admin' || currentRole === 'Designer';
-  const canUpdateProduction = currentRole === 'Admin' || currentRole === 'Production';
-  const canUpdateQC = currentRole === 'Admin' || currentRole === 'QC';
-  const canUpdateDispatch = currentRole === 'Admin' || currentRole === 'Dispatch';
-  const canTransitionStatus = currentRole === 'Admin' || currentRole === 'Production' || currentRole === 'QC' || currentRole === 'Dispatch';
+  const isReadOnly = currentRole === 'SALES_EXECUTIVE' || currentRole === 'ACCOUNTS';
+  const canUpdateArtwork = currentRole === 'SUPER_ADMIN' || currentRole === 'COMPANY_ADMIN' || currentRole === 'DESIGNER';
+  const canUpdateProduction = currentRole === 'SUPER_ADMIN' || currentRole === 'COMPANY_ADMIN' || currentRole === 'PRINTER';
+  const canUpdateQC = currentRole === 'SUPER_ADMIN' || currentRole === 'COMPANY_ADMIN' || currentRole === 'PRINTER';
+  const canUpdateDispatch = currentRole === 'SUPER_ADMIN' || currentRole === 'COMPANY_ADMIN' || currentRole === 'PRINTER';
+  const canTransitionStatus = currentRole === 'SUPER_ADMIN' || currentRole === 'COMPANY_ADMIN' || currentRole === 'PRINTER' || currentRole === 'DESIGNER';
 
   const handleOpenStatusDialog = () => {
     const allowed = getNextAllowedStages(jobCard.status);

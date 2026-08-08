@@ -185,7 +185,7 @@ export default function PIDetails({ invoice, onBack, onEdit, onCreateProductionO
           <Typography variant="h5" sx={{ fontWeight: 800 }}>{invoice.piNumber}</Typography>
           <Stack direction="row" spacing={1} sx={{ mt: 0.5 }}>
             <Chip label={invoice.status} size="small" color={getStatusColor(invoice.status)} sx={{ height: 20, fontSize: '0.65rem', fontWeight: 'bold' }} />
-            {invoice.isProductionApproved && (
+            {invoice.productionApproved && (
               <Chip label="PRODUCTION APPROVED" size="small" color="success" sx={{ height: 20, fontSize: '0.65rem', fontWeight: 'bold' }} />
             )}
             {invoice.revisionNumber > 0 && (
@@ -196,7 +196,7 @@ export default function PIDetails({ invoice, onBack, onEdit, onCreateProductionO
         <Box sx={{ flexGrow: 1 }} />
 
         {/* Action Buttons */}
-        {!invoice.isProductionApproved && invoice.status !== 'Cancelled' && (
+        {!invoice.productionApproved && invoice.status !== 'Cancelled' && (
           <Button 
             variant="contained" 
             color="secondary" 
@@ -212,7 +212,7 @@ export default function PIDetails({ invoice, onBack, onEdit, onCreateProductionO
           variant="contained" 
           startIcon={<JobCardIcon />} 
           color="success"
-          disabled={!invoice.isProductionApproved && invoice.status !== 'Production Approved' && invoice.status !== 'Converted to Production'}
+          disabled={!invoice.productionApproved && invoice.status !== 'Production Approved' && invoice.status !== 'Converted to Production'}
           onClick={handleConvertToProductionFlow} 
           sx={{ borderRadius: 2 }}
         >

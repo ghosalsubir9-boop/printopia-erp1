@@ -575,6 +575,42 @@ export interface JobCard {
 
   createdAt: string;
   updatedAt: string;
+
+  // Traceability & single-item fields
+  productionOrderId: string;
+  productionOrderNumber: string;
+  productionOrderItemId: string;
+
+  proformaInvoiceId?: string;
+  proformaInvoiceNumber?: string;
+  proformaInvoiceItemId?: string;
+
+  quotationId?: string;
+  quotationItemId?: string;
+  quotationOptionId?: string;
+
+  customerId?: string;
+  productId?: string;
+  productName?: string;
+  quantity?: number;
+
+  specifications?: string;
+
+  suggestedParentSheet?: string;
+  finalParentSheet?: string;
+  suggestedUps?: number;
+  finalUps?: number;
+  suggestedMachine?: string;
+  finalMachine?: string;
+  suggestedPlate?: string;
+  finalPlate?: string;
+
+  netSheets?: number;
+  manualWastage?: number;
+  totalRequiredSheets?: number;
+
+  createdByUserId?: string;
+  createdByName?: string;
 }
 
 // Strictly Typed API Requests / Objects for Job Cards
@@ -621,6 +657,41 @@ export interface CreateJobCardRequest {
   expectedDeliveryDate: string;
   items: JobCardItemCreateInput[];
   artwork: JobCardArtwork;
+
+  productionOrderId?: string;
+  productionOrderNumber?: string;
+  productionOrderItemId?: string;
+
+  proformaInvoiceId?: string;
+  proformaInvoiceNumber?: string;
+  proformaInvoiceItemId?: string;
+
+  quotationId?: string;
+  quotationItemId?: string;
+  quotationOptionId?: string;
+
+  customerId?: string;
+  productId?: string;
+  productName?: string;
+  quantity?: number;
+
+  specifications?: string;
+
+  suggestedParentSheet?: string;
+  finalParentSheet?: string;
+  suggestedUps?: number;
+  finalUps?: number;
+  suggestedMachine?: string;
+  finalMachine?: string;
+  suggestedPlate?: string;
+  finalPlate?: string;
+
+  netSheets?: number;
+  manualWastage?: number;
+  totalRequiredSheets?: number;
+
+  createdByUserId?: string;
+  createdByName?: string;
 }
 
 export interface UpdateJobCardRequest {

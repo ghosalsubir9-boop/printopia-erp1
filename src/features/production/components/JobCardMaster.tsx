@@ -14,7 +14,7 @@ import { JobCardApiService } from '../services/jobCardApi';
 export default function JobCardMaster() {
   const [view, setView] = useState<'list' | 'details' | 'create'>('list');
   const [selectedCard, setSelectedCard] = useState<JobCard | null>(null);
-  const [currentRole, setCurrentRole] = useState<'Admin' | 'Sales' | 'Designer' | 'Production' | 'QC' | 'Dispatch' | 'Accounts'>('Admin');
+  const [currentRole, setCurrentRole] = useState<'SUPER_ADMIN' | 'COMPANY_ADMIN' | 'SALES_EXECUTIVE' | 'DESIGNER' | 'PRINTER' | 'ACCOUNTS'>('COMPANY_ADMIN');
 
   const handleSelect = (card: JobCard) => {
     setSelectedCard(card);
