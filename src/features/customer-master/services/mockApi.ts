@@ -342,6 +342,42 @@ export class CustomerMasterService {
     if (!localStorage.getItem(STORAGE_DOCUMENTS)) {
       localStorage.setItem(STORAGE_DOCUMENTS, JSON.stringify(SEED_DOCUMENTS));
     }
+    this.migrateChildRecords();
+  }
+
+  private static migrateChildRecords(): void {
+    const rawCustomers = localStorage.getItem(STORAGE_CUSTOMERS);
+    const customers: CustomerMasterItem[] = rawCustomers ? JSON.parse(rawCustomers) : [];
+    const customerCompanyMap = new Map<string, string>();
+    customers.forEach(c => {
+      if (c.id && c.companyId) {
+        customerCompanyMap.set(c.id, c.companyId);
+      }
+    });
+
+    const migrateKey = (key: string) => {
+      const raw = localStorage.getItem(key);
+      if (!raw) return;
+      const items = JSON.parse(raw) as any[];
+      let changed = false;
+      items.forEach(item => {
+        if (!item.companyId && item.customerId) {
+          const mappedCompanyId = customerCompanyMap.get(item.customerId);
+          if (mappedCompanyId) {
+            item.companyId = mappedCompanyId;
+            changed = true;
+          }
+        }
+      });
+      if (changed) {
+        localStorage.setItem(key, JSON.stringify(items));
+      }
+    };
+
+    migrateKey(STORAGE_CONTACTS);
+    migrateKey(STORAGE_ADDRESSES);
+    migrateKey(STORAGE_HISTORY);
+    migrateKey(STORAGE_DOCUMENTS);
   }
 
   // --- GET ALL CUSTOMERS ---
@@ -468,7 +504,8 @@ export class CustomerMasterService {
     const updatedCustomer: CustomerMasterItem = {
       ...current,
       ...updated,
-      id, // protect id
+      id: current.id, // protect id
+      companyId: current.companyId, // PROTECT TENANT OWNERSHIP (Never trust caller-supplied companyId)
       customerCode: current.customerCode, // protect code
       updatedAt: timestamp,
       updatedBy: userName
@@ -511,17 +548,44 @@ export class CustomerMasterService {
   // --- CONTACTS MASTER ENDPOINTS ---
   static getContacts(customerId?: string): CustomerContact[] {
     this.initStorage();
+    const currentCompanyId = AuthService.getCurrentCompanyId();
+    if (!currentCompanyId) return [];
+
+    if (customerId) {
+      const rawCustomers = localStorage.getItem(STORAGE_CUSTOMERS);
+      const customers: CustomerMasterItem[] = rawCustomers ? JSON.parse(rawCustomers) : [];
+      const parent = customers.find(c => c.id === customerId);
+      if (!parent || parent.companyId !== currentCompanyId) {
+        return [];
+      }
+    }
+
     const data = localStorage.getItem(STORAGE_CONTACTS);
     const list: CustomerContact[] = data ? JSON.parse(data) : [];
-    return customerId ? list.filter((c) => c.customerId === customerId) : list;
+    return list.filter((c) => {
+      if (c.companyId !== currentCompanyId) return false;
+      if (customerId && c.customerId !== customerId) return false;
+      return true;
+    });
   }
 
   static addContact(contact: Omit<CustomerContact, 'id'> & { id?: string }): CustomerContact {
     this.initStorage();
-    const list = this.getContacts();
+    const companyId = AuthService.requireCurrentCompanyId();
+
+    if (contact.customerId) {
+      const parent = this.getCustomerById(contact.customerId);
+      if (!parent) {
+        throw new Error('Customer not found or access denied.');
+      }
+    }
+
+    const rawData = localStorage.getItem(STORAGE_CONTACTS);
+    const list: CustomerContact[] = rawData ? JSON.parse(rawData) : [];
     const newContact: CustomerContact = {
       ...contact,
-      id: contact.id || `cont-${Date.now()}`
+      id: contact.id || `cont-${Date.now()}`,
+      companyId
     };
     list.push(newContact);
     localStorage.setItem(STORAGE_CONTACTS, JSON.stringify(list));
@@ -533,6 +597,12 @@ export class CustomerMasterService {
     const data = localStorage.getItem(STORAGE_CONTACTS);
     if (data) {
       const list = JSON.parse(data) as CustomerContact[];
+      const target = list.find(c => c.id === id);
+      if (target) {
+        AuthService.assertTenantAccess(target.companyId, AuthService.getCurrentUser());
+      } else {
+        throw new Error(`Contact with ID '${id}' not found.`);
+      }
       const filtered = list.filter((c) => c.id !== id);
       localStorage.setItem(STORAGE_CONTACTS, JSON.stringify(filtered));
     }
@@ -541,22 +611,49 @@ export class CustomerMasterService {
   // --- ADDRESSES MASTER ENDPOINTS ---
   static getAddresses(customerId?: string): CustomerAddress[] {
     this.initStorage();
+    const currentCompanyId = AuthService.getCurrentCompanyId();
+    if (!currentCompanyId) return [];
+
+    if (customerId) {
+      const rawCustomers = localStorage.getItem(STORAGE_CUSTOMERS);
+      const customers: CustomerMasterItem[] = rawCustomers ? JSON.parse(rawCustomers) : [];
+      const parent = customers.find(c => c.id === customerId);
+      if (!parent || parent.companyId !== currentCompanyId) {
+        return [];
+      }
+    }
+
     const data = localStorage.getItem(STORAGE_ADDRESSES);
     const list: CustomerAddress[] = data ? JSON.parse(data) : [];
-    return customerId ? list.filter((c) => c.customerId === customerId) : list;
+    return list.filter((a) => {
+      if (a.companyId !== currentCompanyId) return false;
+      if (customerId && a.customerId !== customerId) return false;
+      return true;
+    });
   }
 
   static addAddress(address: Omit<CustomerAddress, 'id'> & { id?: string }): CustomerAddress {
     this.initStorage();
-    const list = this.getAddresses();
+    const companyId = AuthService.requireCurrentCompanyId();
+
+    if (address.customerId) {
+      const parent = this.getCustomerById(address.customerId);
+      if (!parent) {
+        throw new Error('Customer not found or access denied.');
+      }
+    }
+
+    const rawData = localStorage.getItem(STORAGE_ADDRESSES);
+    const list: CustomerAddress[] = rawData ? JSON.parse(rawData) : [];
     const newAddress: CustomerAddress = {
       ...address,
-      id: address.id || `addr-${Date.now()}`
+      id: address.id || `addr-${Date.now()}`,
+      companyId
     };
     // If isDefault is true, set others of same type to false
     if (newAddress.isDefault) {
       list.forEach((item) => {
-        if (item.customerId === newAddress.customerId && item.addressType === newAddress.addressType) {
+        if (item.customerId === newAddress.customerId && item.addressType === newAddress.addressType && item.companyId === companyId) {
           item.isDefault = false;
         }
       });
@@ -571,6 +668,12 @@ export class CustomerMasterService {
     const data = localStorage.getItem(STORAGE_ADDRESSES);
     if (data) {
       const list = JSON.parse(data) as CustomerAddress[];
+      const target = list.find(a => a.id === id);
+      if (target) {
+        AuthService.assertTenantAccess(target.companyId, AuthService.getCurrentUser());
+      } else {
+        throw new Error(`Address with ID '${id}' not found.`);
+      }
       const filtered = list.filter((c) => c.id !== id);
       localStorage.setItem(STORAGE_ADDRESSES, JSON.stringify(filtered));
     }
@@ -579,17 +682,44 @@ export class CustomerMasterService {
   // --- PRICE HISTORY ENDPOINTS ---
   static getPriceHistory(customerId?: string): CustomerPriceHistory[] {
     this.initStorage();
+    const currentCompanyId = AuthService.getCurrentCompanyId();
+    if (!currentCompanyId) return [];
+
+    if (customerId) {
+      const rawCustomers = localStorage.getItem(STORAGE_CUSTOMERS);
+      const customers: CustomerMasterItem[] = rawCustomers ? JSON.parse(rawCustomers) : [];
+      const parent = customers.find(c => c.id === customerId);
+      if (!parent || parent.companyId !== currentCompanyId) {
+        return [];
+      }
+    }
+
     const data = localStorage.getItem(STORAGE_HISTORY);
     const list: CustomerPriceHistory[] = data ? JSON.parse(data) : [];
-    return customerId ? list.filter((h) => h.customerId === customerId) : list;
+    return list.filter((h) => {
+      if (h.companyId !== currentCompanyId) return false;
+      if (customerId && h.customerId !== customerId) return false;
+      return true;
+    });
   }
 
   static addPriceHistoryRecord(record: Omit<CustomerPriceHistory, 'id'>): CustomerPriceHistory {
     this.initStorage();
-    const list = this.getPriceHistory();
+    const companyId = AuthService.requireCurrentCompanyId();
+
+    if (record.customerId) {
+      const parent = this.getCustomerById(record.customerId);
+      if (!parent) {
+        throw new Error('Customer not found or access denied.');
+      }
+    }
+
+    const rawData = localStorage.getItem(STORAGE_HISTORY);
+    const list: CustomerPriceHistory[] = rawData ? JSON.parse(rawData) : [];
     const newRecord: CustomerPriceHistory = {
       ...record,
-      id: `hist-${Date.now()}`
+      id: `hist-${Date.now()}`,
+      companyId
     };
     list.push(newRecord);
     localStorage.setItem(STORAGE_HISTORY, JSON.stringify(list));
@@ -599,17 +729,44 @@ export class CustomerMasterService {
   // --- DOCUMENTS MASTER ENDPOINTS ---
   static getDocuments(customerId?: string): CustomerDocument[] {
     this.initStorage();
+    const currentCompanyId = AuthService.getCurrentCompanyId();
+    if (!currentCompanyId) return [];
+
+    if (customerId) {
+      const rawCustomers = localStorage.getItem(STORAGE_CUSTOMERS);
+      const customers: CustomerMasterItem[] = rawCustomers ? JSON.parse(rawCustomers) : [];
+      const parent = customers.find(c => c.id === customerId);
+      if (!parent || parent.companyId !== currentCompanyId) {
+        return [];
+      }
+    }
+
     const data = localStorage.getItem(STORAGE_DOCUMENTS);
     const list: CustomerDocument[] = data ? JSON.parse(data) : [];
-    return customerId ? list.filter((d) => d.customerId === customerId) : list;
+    return list.filter((d) => {
+      if (d.companyId !== currentCompanyId) return false;
+      if (customerId && d.customerId !== customerId) return false;
+      return true;
+    });
   }
 
   static addDocument(doc: Omit<CustomerDocument, 'id'>): CustomerDocument {
     this.initStorage();
-    const list = this.getDocuments();
+    const companyId = AuthService.requireCurrentCompanyId();
+
+    if (doc.customerId) {
+      const parent = this.getCustomerById(doc.customerId);
+      if (!parent) {
+        throw new Error('Customer not found or access denied.');
+      }
+    }
+
+    const rawData = localStorage.getItem(STORAGE_DOCUMENTS);
+    const list: CustomerDocument[] = rawData ? JSON.parse(rawData) : [];
     const newDoc: CustomerDocument = {
       ...doc,
-      id: `doc-${Date.now()}`
+      id: `doc-${Date.now()}`,
+      companyId
     };
     list.push(newDoc);
     localStorage.setItem(STORAGE_DOCUMENTS, JSON.stringify(list));
@@ -621,6 +778,12 @@ export class CustomerMasterService {
     const data = localStorage.getItem(STORAGE_DOCUMENTS);
     if (data) {
       const list = JSON.parse(data) as CustomerDocument[];
+      const target = list.find(d => d.id === id);
+      if (target) {
+        AuthService.assertTenantAccess(target.companyId, AuthService.getCurrentUser());
+      } else {
+        throw new Error(`Document with ID '${id}' not found.`);
+      }
       const filtered = list.filter((d) => d.id !== id);
       localStorage.setItem(STORAGE_DOCUMENTS, JSON.stringify(filtered));
     }

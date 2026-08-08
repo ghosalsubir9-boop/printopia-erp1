@@ -289,11 +289,15 @@ export class VendorMasterService {
     // Enforce read-only constraint on vendorCode (Rules 4, 7 & 8)
     const { vendorCode, ...safeFields } = updatedFields;
 
+    const existing = list[index];
+    AuthService.assertTenantAccess(existing.companyId, AuthService.getCurrentUser());
+
     const updatedVendor: VendorMasterItem = {
-      ...list[index],
+      ...existing,
       ...safeFields,
-      // Retain original vendorCode
-      vendorCode: list[index].vendorCode,
+      id: existing.id,
+      companyId: existing.companyId, // PROTECT TENANT OWNERSHIP
+      vendorCode: existing.vendorCode,
       updatedAt: new Date().toISOString(),
       updatedBy: AuthService.getCurrentUser()?.userName || 'System'
     };

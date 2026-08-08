@@ -160,11 +160,17 @@ export class MachineApiService {
       }
     }
 
+    const currentUser = AuthService.getCurrentUser();
+    const userName = currentUser?.userName || 'System';
+
     const updatedMachine: MachineMasterItem = {
-      ...machines[index],
+      ...existing,
       ...updatedFields,
+      id: existing.id,
+      companyId: existing.companyId, // PROTECT TENANT OWNERSHIP
+      machineCode: existing.machineCode,
       updatedAt: new Date().toISOString(),
-      updatedBy: 'subir.ghosal' // Logged in user updating
+      updatedBy: userName
     };
 
     machines[index] = updatedMachine;

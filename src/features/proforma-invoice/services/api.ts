@@ -123,10 +123,14 @@ export class PIApiService {
     if (calculated.id) {
       const index = invoices.findIndex(i => i.id === calculated.id);
       if (index !== -1) {
+        const current = invoices[index];
+        AuthService.assertTenantAccess(current.companyId, AuthService.getCurrentUser());
         const updated = {
-          ...invoices[index],
+          ...current,
           ...calculated,
-          companyId,
+          id: current.id,
+          companyId: current.companyId, // PROTECT TENANT OWNERSHIP
+          piNumber: current.piNumber,
           updatedAt: new Date().toISOString()
         } as ProformaInvoice;
         invoices[index] = updated;

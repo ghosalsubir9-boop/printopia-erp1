@@ -29,29 +29,32 @@ export class QuotationApiService {
 
   static async saveQuotation(quotation: QuotationHeader): Promise<QuotationHeader> {
     const quotations = this.getStoredQuotations();
-    const currentCompanyId = AuthService.getCurrentCompanyId();
     const index = quotations.findIndex(q => q.id === quotation.id);
 
     if (index >= 0) {
-      AuthService.assertTenantAccess(quotations[index].companyId, AuthService.getCurrentUser());
+      const existing = quotations[index];
+      AuthService.assertTenantAccess(existing.companyId, AuthService.getCurrentUser());
+      const updated: QuotationHeader = {
+        ...existing,
+        ...quotation,
+        id: existing.id,
+        companyId: existing.companyId, // PROTECT TENANT OWNERSHIP
+        quotationNumber: existing.quotationNumber,
+        updatedAt: new Date().toISOString()
+      };
+      quotations[index] = updated;
+      this.setStoredQuotations(quotations);
+      return updated;
     }
 
     const companyId = AuthService.requireCurrentCompanyId();
     const preparedQuotation: QuotationHeader = {
       ...quotation,
-      companyId
+      companyId,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
     };
-    
-    if (index >= 0) {
-      quotations[index] = { ...preparedQuotation, updatedAt: new Date().toISOString() };
-    } else {
-      quotations.push({ 
-        ...preparedQuotation, 
-        createdAt: new Date().toISOString(), 
-        updatedAt: new Date().toISOString() 
-      });
-    }
-    
+    quotations.push(preparedQuotation);
     this.setStoredQuotations(quotations);
     return preparedQuotation;
   }

@@ -17,6 +17,11 @@ import { AuthService } from './services/authService';
 import { BillingApiService } from './features/billing/api';
 import { GstApiService } from './features/gst-management/services/gstApi';
 import { GstUtils } from './features/gst-management/utils/gstUtils';
+import { CustomerMasterService } from './features/customer-master/services/mockApi';
+import { MachineApiService } from './features/machines/services/api';
+import { EstimateApiService } from './features/estimate/job-entry/services/api';
+import { QuotationApiService } from './features/quotation/services/api';
+import { PIApiService } from './features/proforma-invoice/services/api';
 
 async function runTests() {
   console.log('=== STARTING PRINTOPIA AUTH & INTEGRITY TEST SUITE ===\n');
@@ -305,6 +310,247 @@ async function runTests() {
     companyName: 'Company 1'
   });
   assert(AuthService.requireCurrentCompanyId() === 'company-1', 'Verify: requireCurrentCompanyId returns active tenant companyId.');
+
+  // Test 15: Protect companyId during updates (Customer, Machine, Estimate, Quotation, PI)
+  const xyzCust = CustomerMasterService.saveCustomer({
+    companyName: 'XYZ Corp',
+    gstRegistered: true,
+    gstin: '27AAAAA1111A1Z1',
+    pan: 'AAAAA1111A',
+    customerType: 'Commercial',
+    contactPerson: 'XYZ Contact',
+    designation: 'Manager',
+    mobile: '9876543210',
+    email: 'xyz@corp.com',
+    billingAddress: '123 XYZ Street',
+    shippingAddress: '123 XYZ Street',
+    city: 'Mumbai',
+    state: 'Maharashtra',
+    pinCode: '400001',
+    country: 'India',
+    paymentTerms: 'Net 30',
+    creditDays: 30,
+    creditLimit: 100000,
+    salesExecutive: 'Agent 1',
+    customerCategory: 'Regular',
+    priceCategory: 'Retail',
+    preferredDeliveryMethod: 'Hand Delivery',
+    printingPreferences: {
+      preferredMachine: 'Default',
+      preferredPaper: 'Maplitho',
+      preferredProducts: [],
+      preferredColor: '4 Color',
+      preferredFinishing: [],
+      preferredDelivery: 'Hand Delivery'
+    }
+  });
+
+  const updatedXYZ = CustomerMasterService.updateCustomer(xyzCust.id, {
+    companyName: 'XYZ Corp Updated',
+    companyId: 'company-2' // malicious tenant override payload
+  } as any);
+  assert(updatedXYZ.companyId === 'company-1', 'Verify: updateCustomer ignores caller-supplied companyId override.');
+
+  const createdMachine = await MachineApiService.createMachine({
+    machineCode: 'MCH-TEST-01',
+    machineName: 'Test Machine 1',
+    printingMethod: 'Offset' as any,
+    maxSheetSize: { length: 30, width: 20 },
+    minSheetSize: { length: 10, width: 10 },
+    maxGsm: 350,
+    minGsm: 70,
+    hourlyRate: 500,
+    makeupTimeMinutes: 15,
+    wastagePercentage: 2,
+    speedImpressionsPerHour: 5000,
+    isActive: true
+  });
+  const updatedMachine = await MachineApiService.updateMachine(createdMachine.id, {
+    companyId: 'company-2' // override attempt
+  } as any);
+  assert(updatedMachine.companyId === 'company-1', 'Verify: updateMachine ignores caller-supplied companyId override.');
+
+  const createdEstimate = await EstimateApiService.createEstimate({
+    customerName: 'XYZ Corp',
+    jobTitle: 'XYZ Brochure',
+    quantity: 1000,
+    status: 'Draft' as any,
+    totalCost: 5000,
+    grandTotal: 5900,
+    sections: []
+  });
+  const updatedEstimate = await EstimateApiService.updateEstimate(createdEstimate.id, {
+    companyId: 'company-2'
+  } as any);
+  assert(updatedEstimate.companyId === 'company-1', 'Verify: updateEstimate ignores caller-supplied companyId override.');
+
+  const createdQuotation = await QuotationApiService.saveQuotation({
+    id: `qtn-${Date.now()}`,
+    companyId: 'company-1',
+    quotationNumber: 'QTN/26-27/0001',
+    estimateId: createdEstimate.id,
+    customerId: xyzCust.id,
+    customerName: xyzCust.companyName,
+    date: '2026-08-08',
+    validUntil: '2026-09-08',
+    status: 'Draft' as any,
+    totalAmount: 5000,
+    gstAmount: 900,
+    grandTotal: 5900,
+    items: [],
+    termsAndConditions: []
+  });
+  const updatedQuotation = await QuotationApiService.saveQuotation({
+    ...createdQuotation,
+    companyId: 'company-2' // override attempt
+  });
+  assert(updatedQuotation.companyId === 'company-1', 'Verify: saveQuotation update ignores caller-supplied companyId override.');
+
+  const createdPI = await PIApiService.saveInvoice({
+    date: '2026-08-08',
+    customerId: xyzCust.id,
+    customerName: xyzCust.companyName,
+    items: [],
+    subTotal: 5000,
+    cgstTotal: 450,
+    sgstTotal: 450,
+    igstTotal: 0,
+    grandTotal: 5900
+  });
+  const updatedPI = await PIApiService.saveInvoice({
+    ...createdPI,
+    companyId: 'company-2' // override attempt
+  });
+  assert(updatedPI.companyId === 'company-1', 'Verify: PIApiService.saveInvoice update ignores caller-supplied companyId override.');
+
+  // Test 16: Customer Child Record Tenant Isolation
+  // Create XYZ child records under company-1
+  const xyzContact = CustomerMasterService.addContact({
+    customerId: xyzCust.id,
+    name: 'XYZ Child Contact',
+    department: 'Sales',
+    mobile: '9999999999',
+    email: 'contact@xyz.com'
+  });
+  const xyzAddress = CustomerMasterService.addAddress({
+    customerId: xyzCust.id,
+    addressType: 'Billing',
+    addressLine: 'XYZ Line 1',
+    city: 'Mumbai',
+    state: 'Maharashtra',
+    pinCode: '400001',
+    country: 'India',
+    isDefault: true
+  });
+  const xyzDoc = CustomerMasterService.addDocument({
+    customerId: xyzCust.id,
+    documentType: 'GST Certificate',
+    fileName: 'xyz_gst.pdf',
+    fileSize: '1 MB',
+    uploadedAt: '2026-08-08'
+  });
+
+  // Switch session to Company 2
+  AuthService.createSession({
+    userId: 'user-c2',
+    userName: 'Company 2 Admin',
+    email: 'admin2@company2.com',
+    role: 'COMPANY_ADMIN',
+    companyId: 'company-2',
+    companyName: 'Company 2'
+  });
+
+  // Create ABC customer and child records under company-2
+  const abcCust = CustomerMasterService.saveCustomer({
+    companyName: 'ABC Corp',
+    gstRegistered: false,
+    customerType: 'Corporate',
+    contactPerson: 'ABC Contact',
+    designation: 'Director',
+    mobile: '8888888888',
+    email: 'abc@corp.com',
+    billingAddress: '456 ABC Street',
+    shippingAddress: '456 ABC Street',
+    city: 'Delhi',
+    state: 'Delhi',
+    pinCode: '110001',
+    country: 'India',
+    paymentTerms: 'Immediate',
+    creditDays: 0,
+    creditLimit: 50000,
+    salesExecutive: 'Agent 2',
+    customerCategory: 'A',
+    priceCategory: 'Contract',
+    preferredDeliveryMethod: 'Courier',
+    printingPreferences: {
+      preferredMachine: 'Default',
+      preferredPaper: 'Art Paper',
+      preferredProducts: [],
+      preferredColor: '1 Color',
+      preferredFinishing: [],
+      preferredDelivery: 'Courier'
+    }
+  });
+
+  const abcContact = CustomerMasterService.addContact({
+    customerId: abcCust.id,
+    name: 'ABC Child Contact',
+    department: 'Admin',
+    mobile: '8888888888',
+    email: 'contact@abc.com'
+  });
+  const abcAddress = CustomerMasterService.addAddress({
+    customerId: abcCust.id,
+    addressType: 'Billing',
+    addressLine: 'ABC Line 1',
+    city: 'Delhi',
+    state: 'Delhi',
+    pinCode: '110001',
+    country: 'India',
+    isDefault: true
+  });
+  const abcDoc = CustomerMasterService.addDocument({
+    customerId: abcCust.id,
+    documentType: 'Trade License',
+    fileName: 'abc_license.pdf',
+    fileSize: '500 KB',
+    uploadedAt: '2026-08-08'
+  });
+
+  // As company-2 user:
+  assert(CustomerMasterService.getContacts(xyzCust.id).length === 0, 'Verify: company-2 user cannot see XYZ contacts.');
+  assert(CustomerMasterService.getAddresses(xyzCust.id).length === 0, 'Verify: company-2 user cannot see XYZ addresses.');
+  assert(CustomerMasterService.getDocuments(xyzCust.id).length === 0, 'Verify: company-2 user cannot see XYZ documents.');
+
+  const company2Contacts = CustomerMasterService.getContacts();
+  assert(company2Contacts.some(c => c.id === abcContact.id), 'Verify: getContacts() without customerId returns company-2 records.');
+  assert(!company2Contacts.some(c => c.id === xyzContact.id), 'Verify: getContacts() without customerId excludes company-1 records.');
+
+  const company2Addresses = CustomerMasterService.getAddresses();
+  assert(company2Addresses.some(a => a.id === abcAddress.id), 'Verify: getAddresses() without customerId returns company-2 records.');
+  assert(!company2Addresses.some(a => a.id === xyzAddress.id), 'Verify: getAddresses() without customerId excludes company-1 records.');
+
+  // Attempt delete of XYZ child record from company-2 session must be BLOCKED
+  try {
+    CustomerMasterService.deleteContact(xyzContact.id);
+    assert(false, 'deleteContact for cross-tenant record should have been blocked.');
+  } catch (e: any) {
+    assert(true, 'Verify: deleteContact on cross-tenant record is blocked.');
+  }
+
+  try {
+    CustomerMasterService.deleteAddress(xyzAddress.id);
+    assert(false, 'deleteAddress for cross-tenant record should have been blocked.');
+  } catch (e: any) {
+    assert(true, 'Verify: deleteAddress on cross-tenant record is blocked.');
+  }
+
+  try {
+    CustomerMasterService.deleteDocument(xyzDoc.id);
+    assert(false, 'deleteDocument for cross-tenant record should have been blocked.');
+  } catch (e: any) {
+    assert(true, 'Verify: deleteDocument on cross-tenant record is blocked.');
+  }
 
   console.log('\n=== PRINTOPIA AUTH & INTEGRITY TEST RESULTS ===');
   console.log(`Passed: ${passedCount}`);

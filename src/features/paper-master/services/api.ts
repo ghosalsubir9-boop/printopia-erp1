@@ -661,11 +661,17 @@ export class PaperApiService {
       }
     }
 
+    const currentUser = AuthService.getCurrentUser();
+    const userName = currentUser?.userName || 'System';
+
     const updatedPaper: PaperMasterItem = {
-      ...papers[index],
+      ...existing,
       ...updatedFields,
+      id: existing.id,
+      companyId: existing.companyId, // PROTECT TENANT OWNERSHIP
+      paperCode: existing.paperCode,
       updatedAt: new Date().toISOString(),
-      updatedBy: 'subir.ghosal'
+      updatedBy: userName
     };
 
     papers[index] = updatedPaper;

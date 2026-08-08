@@ -21,6 +21,7 @@ export type DeliveryMethod = 'Courier' | 'Hand Delivery' | 'Transport' | 'Self P
 
 export interface CustomerContact {
   id: string;
+  companyId?: string;
   customerId: string;
   name: string;
   department: string;
@@ -31,6 +32,7 @@ export interface CustomerContact {
 
 export interface CustomerAddress {
   id: string;
+  companyId?: string;
   customerId: string;
   addressType: 'Billing' | 'Shipping';
   addressLine: string;
@@ -43,6 +45,7 @@ export interface CustomerAddress {
 
 export interface CustomerPriceHistory {
   id: string;
+  companyId?: string;
   customerId: string;
   quotationNumber: string;
   product: string;
@@ -55,6 +58,7 @@ export interface CustomerPriceHistory {
 
 export interface CustomerDocument {
   id: string;
+  companyId?: string;
   customerId: string;
   documentType: 'GST Certificate' | 'Trade License' | 'Agreement' | 'Other';
   fileName: string;

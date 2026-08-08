@@ -571,11 +571,17 @@ export class ProductApiService {
     // Ensure we strip out any modifications to productCode to maintain read-only discipline.
     const { productCode, ...safeFields } = updatedFields;
 
+    const currentUser = AuthService.getCurrentUser();
+    const userName = currentUser?.userName || 'System';
+
     const updatedProduct: ProductMasterItem = {
-      ...products[index],
+      ...existing,
       ...safeFields,
+      id: existing.id,
+      companyId: existing.companyId, // PROTECT TENANT OWNERSHIP
+      productCode: existing.productCode,
       updatedAt: new Date().toISOString(),
-      updatedBy: 'subir.ghosal'
+      updatedBy: userName
     };
 
     products[index] = updatedProduct;

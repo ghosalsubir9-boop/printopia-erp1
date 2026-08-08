@@ -427,6 +427,9 @@ export class PurchaseApiService {
     const updatedPO: PurchaseOrderHeader = {
       ...currentPO,
       ...updatedData,
+      id: currentPO.id,
+      companyId: currentPO.companyId, // PROTECT TENANT OWNERSHIP
+      poNumber: currentPO.poNumber,
       items,
       subTotal: parseFloat(subTotal.toFixed(2)),
       discountTotal: parseFloat(discountTotal.toFixed(2)),

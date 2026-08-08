@@ -241,6 +241,9 @@ export class EstimateApiService {
     const updatedJob: EstimateJob = {
       ...current,
       ...updatedFields,
+      id: current.id,
+      companyId: current.companyId, // PROTECT TENANT OWNERSHIP
+      estimateNumber: current.estimateNumber,
       updatedAt: new Date().toISOString()
     };
 
