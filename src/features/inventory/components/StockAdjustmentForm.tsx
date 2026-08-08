@@ -24,6 +24,7 @@ import {
 import { X, Sliders, ShieldAlert } from 'lucide-react';
 import { InventoryItem } from '../types';
 import { InventoryApiService } from '../services/api';
+import { AuthService } from '../../../services/authService';
 
 interface StockAdjustmentFormProps {
   open: boolean;
@@ -138,7 +139,7 @@ export default function StockAdjustmentForm({
         warehouse: selectedItem?.warehouse || 'Main Store',
         adjustmentType,
         quantity: Number(quantity),
-        adjustedBy: 'Subir Ghosal (Admin)', // Signed in admin
+        adjustedBy: AuthService.getCurrentUser()?.userName || 'System',
         reason,
         remarks
       });
@@ -214,7 +215,7 @@ export default function StockAdjustmentForm({
                   }
                   label={
                     <Typography variant="body2" sx={{ fontWeight: 'bold', color: 'error.main' }}>
-                      Authorize adjustment as Admin (User: Subir Ghosal)
+                      Authorize adjustment as Admin (User: {AuthService.getCurrentUser()?.userName || 'Authorized User'})
                     </Typography>
                   }
                 />

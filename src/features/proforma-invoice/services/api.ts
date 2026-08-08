@@ -35,7 +35,9 @@ export class PIApiService {
    */
   static isOptionAlreadyConverted(optionId: string, currentPiId?: string): boolean {
     const invoices = this.getStoredInvoices();
+    const currentCompanyId = AuthService.getCurrentCompanyId();
     return invoices.some(pi => 
+      pi.companyId === currentCompanyId &&
       pi.id !== currentPiId &&
       pi.status !== 'Cancelled' &&
       (pi.convertedOptionIds || []).includes(optionId)
@@ -111,13 +113,12 @@ export class PIApiService {
 
   static async saveInvoice(invoice: Partial<ProformaInvoice>): Promise<ProformaInvoice> {
     const invoices = this.getStoredInvoices();
-    const currentCompanyId = AuthService.getCurrentCompanyId();
     const companySettings = CompanySettingsService.getSettings();
     const companyStateCode = companySettings.stateCode || '19';
 
     // Recalculate totals
     const calculated = PICalculationService.calculateTotals(invoice, companyStateCode);
-    const companyId = invoice.companyId || calculated.companyId || currentCompanyId;
+    const companyId = AuthService.requireCurrentCompanyId();
 
     if (calculated.id) {
       const index = invoices.findIndex(i => i.id === calculated.id);
@@ -292,7 +293,7 @@ export class PIApiService {
     return updated;
   }
 
-  static async approveProduction(id: string, approvedBy: string = 'Admin', note?: string): Promise<ProformaInvoice> {
+  static async approveProduction(id: string, approvedBy?: string, note?: string): Promise<ProformaInvoice> {
     const invoices = this.getStoredInvoices();
     const index = invoices.findIndex(i => i.id === id);
     if (index === -1) throw new Error('Proforma Invoice not found');
@@ -301,6 +302,9 @@ export class PIApiService {
     if (pi.status === 'Cancelled') {
       throw new Error('Cannot approve a cancelled Proforma Invoice');
     }
+
+    const currentUser = AuthService.getCurrentUser();
+    const approverName = approvedBy && approvedBy !== 'Admin' ? approvedBy : (currentUser?.userName || 'System');
 
     const settings = CompanySettingsService.getSettings();
     const rule = settings.productionReleaseRule || 'Required Advance Received';
@@ -321,7 +325,7 @@ export class PIApiService {
       ...pi,
       productionApproved: true,
       productionApprovedAt: now.toISOString(),
-      productionApprovedBy: approvedBy,
+      productionApprovedBy: approverName,
       productionApprovalNote: note,
       status: 'Production Approved',
       updatedAt: now.toISOString(),

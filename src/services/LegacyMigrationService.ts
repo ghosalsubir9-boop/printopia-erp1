@@ -70,6 +70,48 @@ export class LegacyMigrationService {
       localStorage.setItem(`company_settings_${DEFAULT_DEMO_TENANT_ID}`, defaultSettings);
     }
 
+    // Migrate legacy user roles
+    try {
+      const roleMap: Record<string, string> = {
+        'Admin': 'COMPANY_ADMIN',
+        'Sales Executive': 'SALES_EXECUTIVE',
+        'Sales': 'SALES_EXECUTIVE',
+        'Designer': 'DESIGNER',
+        'Printer': 'PRINTER',
+        'Production': 'PRINTER',
+        'Accounts': 'ACCOUNTS'
+      };
+
+      const usersRaw = localStorage.getItem('printopia_users_v2');
+      if (usersRaw) {
+        const users = JSON.parse(usersRaw);
+        if (Array.isArray(users)) {
+          let userMod = false;
+          const updatedUsers = users.map((u: any) => {
+            if (u && u.role && roleMap[u.role]) {
+              userMod = true;
+              return { ...u, role: roleMap[u.role] };
+            }
+            return u;
+          });
+          if (userMod) {
+            localStorage.setItem('printopia_users_v2', JSON.stringify(updatedUsers));
+          }
+        }
+      }
+
+      const sessionRaw = localStorage.getItem('printopia_user_session_v2');
+      if (sessionRaw) {
+        const session = JSON.parse(sessionRaw);
+        if (session && session.role && roleMap[session.role]) {
+          session.role = roleMap[session.role];
+          localStorage.setItem('printopia_user_session_v2', JSON.stringify(session));
+        }
+      }
+    } catch (err) {
+      console.error('[LegacyMigrationService] Error normalizing roles:', err);
+    }
+
     // Mark migration as completed
     localStorage.setItem(MIGRATION_VERSION_KEY, 'true');
     console.log('[LegacyMigrationService] MULTI_TENANT_MIGRATION_V1 completed successfully.');

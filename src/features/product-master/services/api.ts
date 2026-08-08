@@ -529,17 +529,20 @@ export class ProductApiService {
       throw new Error(`Product Code '${finalCode}' is already registered in the registry.`);
     }
 
-    const currentCompanyId = AuthService.getCurrentCompanyId();
+    const companyId = AuthService.requireCurrentCompanyId();
+    const currentUser = AuthService.getCurrentUser();
+    const userName = currentUser?.userName || 'System';
+
     const newProduct: ProductMasterItem = {
       ...product,
       id: `prod-${Date.now()}`,
-      companyId: product.companyId || currentCompanyId,
+      companyId: companyId,
       scope: product.scope || 'TENANT',
       productCode: finalCode,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
-      createdBy: 'subir.ghosal',
-      updatedBy: 'subir.ghosal'
+      createdBy: userName,
+      updatedBy: userName
     };
 
     products.unshift(newProduct);

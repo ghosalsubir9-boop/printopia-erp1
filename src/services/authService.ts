@@ -12,12 +12,26 @@ export type UserRole =
   | 'SALES_EXECUTIVE'
   | 'DESIGNER'
   | 'PRINTER'
-  | 'ACCOUNTS'
-  | 'Admin'
-  | 'Sales Executive'
-  | 'Designer'
-  | 'Printer'
-  | 'Accounts';
+  | 'ACCOUNTS';
+
+export function normalizeRole(role: string): UserRole {
+  switch (role) {
+    case 'Admin':
+      return 'COMPANY_ADMIN';
+    case 'Sales Executive':
+    case 'Sales':
+      return 'SALES_EXECUTIVE';
+    case 'Designer':
+      return 'DESIGNER';
+    case 'Printer':
+    case 'Production':
+      return 'PRINTER';
+    case 'Accounts':
+      return 'ACCOUNTS';
+    default:
+      return role as UserRole;
+  }
+}
 
 export interface UserSession {
   userId: string;
@@ -32,15 +46,6 @@ export interface UserSession {
   createdAt: string;
   expiresAt: string;
 }
-
-// Active OTP store for demo verification (in-memory)
-interface OTPRecord {
-  code: string;
-  expiresAt: number;
-  user: UserRecord;
-}
-
-const otpStore = new Map<string, OTPRecord>();
 
 export class AuthService {
   private static readonly SESSION_KEY = 'printopia_user_session_v2';
@@ -57,8 +62,15 @@ export class AuthService {
       throw new Error('Access Denied: Authentication required.');
     }
 
-    // Super Admin has global access unless explicit support mode
+    // Super Admin must enter company support context to access tenant business records
     if (currentUser.role === 'SUPER_ADMIN') {
+      const activeSupportTenantId = currentUser.supportTenantId;
+      if (!activeSupportTenantId) {
+        throw new Error('Access Denied: Super Admin must enter company support context to access tenant business records.');
+      }
+      if (recordCompanyId && recordCompanyId !== activeSupportTenantId) {
+        throw new Error('Access Denied: You cannot access records outside the active support tenant context.');
+      }
       return;
     }
 
@@ -89,6 +101,9 @@ export class AuthService {
         this.logout();
         return null;
       }
+
+      // Normalize role
+      session.role = normalizeRole(session.role);
 
       // Verify tenant status if user belongs to a company
       if (session.role !== 'SUPER_ADMIN' && session.companyId) {
@@ -169,18 +184,18 @@ export class AuthService {
     return session;
   }
 
-  public static loginWithEmail(email: string, password: string): UserSession {
-    const cleanEmail = email.trim().toLowerCase();
+  public static loginWithEmail(emailOrMobile: string, password: string): UserSession {
+    const cleanIdentifier = emailOrMobile.trim().toLowerCase();
     const cleanPassword = password.trim();
 
-    if (!cleanEmail || !cleanPassword) {
-      throw new Error('Please enter both email address and password.');
+    if (!cleanIdentifier || !cleanPassword) {
+      throw new Error('Please enter both email address / mobile number and password.');
     }
 
-    const matched = TenantService.getUserByEmailOrMobile(cleanEmail);
+    const matched = TenantService.getUserByEmailOrMobile(cleanIdentifier);
 
     if (!matched || matched.passwordHash !== cleanPassword) {
-      throw new Error('Invalid email address or password. Please check your credentials and try again.');
+      throw new Error('Invalid email address/mobile number or password. Please check your credentials and try again.');
     }
 
     if (matched.status !== 'ACTIVE') {
@@ -207,90 +222,14 @@ export class AuthService {
       }
     }
 
+    const canonicalRole = normalizeRole(matched.role);
+
     return this.createSession({
       userId: matched.userId,
       userName: matched.userName,
       email: matched.email,
       mobile: matched.mobile,
-      role: matched.role,
-      companyId: matched.companyId,
-      companyName: matched.companyName
-    });
-  }
-
-  public static sendMobileOTP(mobileNumber: string): { success: boolean; message: string } {
-    const cleanMobile = mobileNumber.replace(/\D/g, '').slice(-10);
-    if (cleanMobile.length !== 10) {
-      throw new Error('Please enter a valid 10-digit Indian mobile number.');
-    }
-
-    const matchedUser = TenantService.getUserByEmailOrMobile(cleanMobile);
-    if (!matchedUser) {
-      throw new Error('Mobile number is not registered with any active ERP organization account.');
-    }
-
-    if (matchedUser.status !== 'ACTIVE') {
-      throw new Error('Your user account is deactivated. Please contact your administrator.');
-    }
-
-    const demoOtp = '123456';
-    const expiresAt = Date.now() + 2 * 60 * 1000;
-
-    otpStore.set(cleanMobile, {
-      code: demoOtp,
-      expiresAt,
-      user: matchedUser
-    });
-
-    return {
-      success: true,
-      message: `OTP sent successfully to +91 ${cleanMobile}`
-    };
-  }
-
-  public static verifyMobileOTP(mobileNumber: string, otp: string): UserSession {
-    const cleanMobile = mobileNumber.replace(/\D/g, '').slice(-10);
-    const cleanOtp = otp.trim();
-
-    if (!cleanMobile || cleanMobile.length !== 10) {
-      throw new Error('Valid 10-digit mobile number is required.');
-    }
-
-    if (!cleanOtp) {
-      throw new Error('Please enter the 6-digit verification OTP code.');
-    }
-
-    const record = otpStore.get(cleanMobile);
-    if (!record || record.code !== cleanOtp) {
-      throw new Error('Invalid OTP verification code. Please check and try again.');
-    }
-
-    if (Date.now() > record.expiresAt) {
-      throw new Error('OTP code has expired. Please click Resend OTP to receive a fresh code.');
-    }
-
-    const matched = record.user;
-
-    if (matched.role !== 'SUPER_ADMIN' && matched.companyId) {
-      const tenant = TenantService.getTenantById(matched.companyId);
-      if (!tenant) {
-        throw new Error('Organization details not found.');
-      }
-      if (tenant.status === 'SUSPENDED') {
-        throw new Error('Your company account is currently suspended. Please contact your ERP provider.');
-      }
-      if (tenant.status === 'INACTIVE') {
-        throw new Error('Your company account is inactive.');
-      }
-    }
-
-    otpStore.delete(cleanMobile);
-    return this.createSession({
-      userId: matched.userId,
-      userName: matched.userName,
-      email: matched.email,
-      mobile: matched.mobile,
-      role: matched.role,
+      role: canonicalRole,
       companyId: matched.companyId,
       companyName: matched.companyName
     });
@@ -303,22 +242,17 @@ export class AuthService {
   /**
    * Role-Based Access Control (RBAC) Module Permission Matrix
    */
-  public static isModuleAllowed(role: UserRole, moduleId: string): boolean {
-    if (role === 'SUPER_ADMIN') {
+  public static isModuleAllowed(role: UserRole | string, moduleId: string): boolean {
+    const canonicalRole = normalizeRole(role);
+
+    if (canonicalRole === 'SUPER_ADMIN' || canonicalRole === 'COMPANY_ADMIN') {
       return true;
     }
 
-    if (role === 'COMPANY_ADMIN' || role === 'Admin') {
-      return true;
-    }
-
-    const allowedMap: Record<string, string[]> = {
+    const allowedMap: Record<UserRole, string[]> = {
+      'SUPER_ADMIN': ['*'],
+      'COMPANY_ADMIN': ['*'],
       'SALES_EXECUTIVE': [
-        'dashboard', 'customers', 'vendors', 'estimates', 'quotations',
-        'proforma-invoices', 'gst-invoices', 'payment-receipts', 'customer-outstanding',
-        'credit-notes', 'company-settings', 'job-cards'
-      ],
-      'Sales Executive': [
         'dashboard', 'customers', 'vendors', 'estimates', 'quotations',
         'proforma-invoices', 'gst-invoices', 'payment-receipts', 'customer-outstanding',
         'credit-notes', 'company-settings', 'job-cards'
@@ -326,13 +260,7 @@ export class AuthService {
       'DESIGNER': [
         'dashboard', 'products', 'papers', 'estimates', 'job-cards', 'production'
       ],
-      'Designer': [
-        'dashboard', 'products', 'papers', 'estimates', 'job-cards', 'production'
-      ],
       'PRINTER': [
-        'dashboard', 'machines', 'papers', 'job-cards', 'production', 'inventory', 'grns'
-      ],
-      'Printer': [
         'dashboard', 'machines', 'papers', 'job-cards', 'production', 'inventory', 'grns'
       ],
       'ACCOUNTS': [
@@ -340,16 +268,10 @@ export class AuthService {
         'gst-invoices', 'payment-receipts', 'customer-outstanding', 'credit-notes',
         'purchase-orders', 'grns', 'purchase-invoices', 'vendor-outstanding',
         'finance', 'vouchers', 'financial-reports', 'gst-reports', 'company-settings'
-      ],
-      'Accounts': [
-        'dashboard', 'customers', 'vendors', 'quotations', 'proforma-invoices',
-        'gst-invoices', 'payment-receipts', 'customer-outstanding', 'credit-notes',
-        'purchase-orders', 'grns', 'purchase-invoices', 'vendor-outstanding',
-        'finance', 'vouchers', 'financial-reports', 'gst-reports', 'company-settings'
       ]
     };
 
-    const allowed = allowedMap[role] || [];
+    const allowed = allowedMap[canonicalRole] || [];
     return allowed.includes('*') || allowed.includes(moduleId);
   }
 }

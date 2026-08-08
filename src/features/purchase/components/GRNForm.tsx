@@ -32,6 +32,7 @@ import {
 } from 'lucide-react';
 import { PurchaseOrderHeader, GRNItem, GoodsReceiptNote } from '../types';
 import { PurchaseApiService } from '../services/api';
+import { AuthService } from '../../../services/authService';
 
 interface GRNFormProps {
   po: PurchaseOrderHeader;
@@ -47,7 +48,9 @@ export default function GRNForm({ po, grnToEdit, onSave, onCancel }: GRNFormProp
   const [challanNumber, setChallanNumber] = useState('');
   const [transportName, setTransportName] = useState('');
   const [vehicleNumber, setVehicleNumber] = useState('');
-  const [receivedBy, setReceivedBy] = useState('Subir Ghosal');
+  const currentUser = AuthService.getCurrentUser();
+  const defaultUser = currentUser?.userName || 'System';
+  const [receivedBy, setReceivedBy] = useState(defaultUser);
   const [warehouse, setWarehouse] = useState('Main Store');
   const [remarks, setRemarks] = useState('');
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -63,7 +66,7 @@ export default function GRNForm({ po, grnToEdit, onSave, onCancel }: GRNFormProp
       setChallanNumber(grnToEdit.challanNumber || '');
       setTransportName(grnToEdit.transportName || '');
       setVehicleNumber(grnToEdit.vehicleNumber || '');
-      setReceivedBy(grnToEdit.receivedBy || 'Subir Ghosal');
+      setReceivedBy(grnToEdit.receivedBy || defaultUser);
       setWarehouse(grnToEdit.warehouse || 'Main Store');
       setRemarks(grnToEdit.remarks || '');
       setItems(grnToEdit.items);

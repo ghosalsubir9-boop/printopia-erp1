@@ -253,6 +253,59 @@ async function runTests() {
     assert(false, `Credit Note limit test failed: ${e.message}`);
   }
 
+  // Test 10: OTP Removal check (verify no OTP auth functions or universal OTP 123456)
+  assert(typeof (AuthService as any).sendMobileOTP !== 'function', 'Verify: sendMobileOTP is completely removed.');
+  assert(typeof (AuthService as any).verifyMobileOTP !== 'function', 'Verify: verifyMobileOTP is completely removed.');
+
+  // Test 11: Role Normalization (verify legacy 'Admin' maps to 'COMPANY_ADMIN')
+  AuthService.createSession({
+    userId: 'legacy-admin',
+    userName: 'Legacy Admin',
+    email: 'legacy@printopia.com',
+    role: 'Admin' as any,
+    companyId: 'company-1',
+    companyName: 'PRINTOPIA GRAPHICS'
+  });
+  const normalizedUser = AuthService.getCurrentUser();
+  assert(normalizedUser?.role === 'COMPANY_ADMIN', 'Verify: Legacy "Admin" role is normalized to "COMPANY_ADMIN".');
+
+  // Test 12: Super Admin Tenant Hardening (verify SUPER_ADMIN cannot access tenant without supportTenantId)
+  AuthService.createSession({
+    userId: 'super-1',
+    userName: 'Super Owner',
+    email: 'super@printopia.com',
+    role: 'SUPER_ADMIN',
+    companyId: null,
+    companyName: 'PRINTOPIA ERP GLOBAL'
+  });
+  try {
+    AuthService.assertTenantAccess('company-1', AuthService.getCurrentUser());
+    assert(false, 'SUPER_ADMIN without supportTenantId should be denied access to company-1.');
+  } catch (e: any) {
+    assert(e.message.includes('company support context'), 'Verify: SUPER_ADMIN requires supportTenantId to access tenant records.');
+  }
+
+  // Test 13: Support mode allows access for SUPER_ADMIN
+  AuthService.setSupportTenant('company-1');
+  try {
+    AuthService.assertTenantAccess('company-1', AuthService.getCurrentUser());
+    assert(true, 'Verify: SUPER_ADMIN with active supportTenantId has access to company-1.');
+  } catch (e: any) {
+    assert(false, `Support mode access failed: ${e.message}`);
+  }
+  AuthService.setSupportTenant(null);
+
+  // Test 14: Never trust caller-supplied companyId (requireCurrentCompanyId)
+  AuthService.createSession({
+    userId: 'user-c1',
+    userName: 'Company 1 Admin',
+    email: 'admin1@company1.com',
+    role: 'COMPANY_ADMIN',
+    companyId: 'company-1',
+    companyName: 'Company 1'
+  });
+  assert(AuthService.requireCurrentCompanyId() === 'company-1', 'Verify: requireCurrentCompanyId returns active tenant companyId.');
+
   console.log('\n=== PRINTOPIA AUTH & INTEGRITY TEST RESULTS ===');
   console.log(`Passed: ${passedCount}`);
   console.log(`Failed: ${failedCount}`);

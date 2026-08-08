@@ -273,7 +273,7 @@ export default function PurchaseInvoiceDetails({ invoiceId, onBack }: PurchaseIn
           severity="error"
           icon={<AlertTriangle className="w-5 h-5" />}
           action={
-            currentUser?.role === 'Admin' ? (
+            (currentUser?.role === 'COMPANY_ADMIN' || currentUser?.role === 'SUPER_ADMIN') ? (
               <Button color="inherit" size="small" variant="outlined" onClick={() => setOverrideOpen(true)}>
                 Approve Admin Override
               </Button>

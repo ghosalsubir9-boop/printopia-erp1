@@ -87,10 +87,7 @@ export class CompanySettingsService {
   }
 
   static saveSettings(settings: CompanySettings): void {
-    const companyId = settings.companyId || AuthService.getCurrentCompanyId();
-    if (!companyId) {
-      throw new Error('Cannot save company settings without tenant context');
-    }
+    const companyId = AuthService.requireCurrentCompanyId();
     const storageKey = `company_settings_${companyId}`;
     localStorage.setItem(storageKey, JSON.stringify({ ...settings, companyId }));
   }

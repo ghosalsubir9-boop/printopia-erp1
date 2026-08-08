@@ -115,15 +115,18 @@ export class MachineApiService {
       throw new Error(`Machine Code '${machine.machineCode}' already registered in the system.`);
     }
 
-    const currentCompanyId = AuthService.getCurrentCompanyId();
+    const companyId = AuthService.requireCurrentCompanyId();
+    const currentUser = AuthService.getCurrentUser();
+    const userName = currentUser?.userName || 'System';
+
     const newMachine: MachineMasterItem = {
       ...machine,
       id: `mm-${Date.now()}`,
-      companyId: machine.companyId || currentCompanyId,
+      companyId: companyId,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
-      createdBy: 'subir.ghosal', // Current User in session
-      updatedBy: 'subir.ghosal'
+      createdBy: userName,
+      updatedBy: userName
     };
 
     machines.unshift(newMachine);

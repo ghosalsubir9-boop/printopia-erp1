@@ -19,6 +19,7 @@ import {
 
 import { CustomerMasterService } from '../../customer-master/services/mockApi';
 import { VendorMasterService } from '../../vendor-master/services/api';
+import { AuthService } from '../../../services/authService';
 
 // STORAGE KEYS
 const STORAGE_FINANCE_SETTINGS = 'printopia_finance_settings';
@@ -246,12 +247,13 @@ class AuditLogger {
     const rawLogs = localStorage.getItem(STORAGE_AUDIT_LOGS);
     const logs: AuditLogEntry[] = rawLogs ? JSON.parse(rawLogs) : [];
 
+    const currentUser = AuthService.getCurrentUser();
     const now = new Date();
     const newEntry: AuditLogEntry = {
       id: `audit-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
       action,
-      user: 'Subir Ghosal', // Preserving standard session user
-      role: 'Admin',
+      user: currentUser?.userName || 'System',
+      role: currentUser?.role || 'ACCOUNTS',
       date: now.toISOString().split('T')[0],
       time: now.toLocaleTimeString(),
       details,
@@ -288,7 +290,7 @@ export class DevelopmentLocalFinanceRepository {
       ...current,
       ...settings,
       updatedAt: new Date().toISOString(),
-      updatedBy: 'Subir Ghosal'
+      updatedBy: AuthService.getCurrentUser()?.userName || 'System'
     };
     localStorage.setItem(STORAGE_FINANCE_SETTINGS, JSON.stringify(updated));
     AuditLogger.log('Updated', 'Company Financial Settings updated.');
@@ -700,7 +702,7 @@ export class DevelopmentLocalFinancialYearRepository {
 
     years[index].status = status;
     years[index].updatedAt = new Date().toISOString();
-    years[index].updatedBy = 'Subir Ghosal';
+    years[index].updatedBy = AuthService.getCurrentUser()?.userName || 'System';
 
     localStorage.setItem(STORAGE_FINANCIAL_YEARS, JSON.stringify(years));
     AuditLogger.log(
@@ -743,7 +745,7 @@ export class DevelopmentLocalOpeningBalanceRepository {
     };
 
     if (state.confirmed) {
-      updated.confirmedBy = 'Subir Ghosal';
+      updated.confirmedBy = AuthService.getCurrentUser()?.userName || 'System';
       updated.confirmedAt = new Date().toISOString();
     }
 

@@ -19,15 +19,12 @@ import {
   Chip,
   Stack,
   Container,
-  Paper,
-  Divider
+  Paper
 } from '@mui/material';
 import {
   LocalPrintshop as LogoIcon,
   Email as EmailIcon,
   Lock as LockIcon,
-  PhoneIphone as PhoneIcon,
-  VpnKey as OtpIcon,
   Visibility,
   VisibilityOff,
   AdminPanelSettings as AdminIcon,
@@ -35,11 +32,10 @@ import {
   Palette as DesignIcon,
   Print as PrintIcon,
   AccountBalance as FinanceIcon,
-  SupervisorAccount as SuperAdminIcon,
   CorporateFare as CompanyIcon
 } from '@mui/icons-material';
 import { AuthService, UserRole } from '../services/authService';
-import { TenantService, UserRecord } from '../services/TenantService';
+import { TenantService } from '../services/TenantService';
 
 interface LoginViewProps {
   onLoginSuccess: () => void;
@@ -48,17 +44,10 @@ interface LoginViewProps {
 export default function LoginView({ onLoginSuccess }: LoginViewProps) {
   const [tabIndex, setTabIndex] = useState<number>(0);
 
-  // Email state
-  const [email, setEmail] = useState('');
+  // Email / Mobile & Password state
+  const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
-
-  // Mobile OTP state
-  const [mobile, setMobile] = useState('');
-  const [otp, setOtp] = useState('');
-  const [otpSent, setOtpSent] = useState(false);
-  const [otpMessage, setOtpMessage] = useState('');
-  const [countdown, setCountdown] = useState(0);
 
   // Common UI state
   const [error, setError] = useState<string | null>(null);
@@ -66,56 +55,16 @@ export default function LoginView({ onLoginSuccess }: LoginViewProps) {
 
   const registeredUsers = TenantService.getAllUsers();
 
-  const startResendCountdown = () => {
-    setCountdown(60);
-    const timer = setInterval(() => {
-      setCountdown((prev) => {
-        if (prev <= 1) {
-          clearInterval(timer);
-          return 0;
-        }
-        return prev - 1;
-      });
-    }, 1000);
-  };
-
-  const handleEmailLogin = (e: React.FormEvent) => {
+  const handleLogin = (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
     setLoading(true);
 
     try {
-      AuthService.loginWithEmail(email, password);
+      AuthService.loginWithEmail(identifier, password);
       onLoginSuccess();
     } catch (err: any) {
       setError(err.message || 'Failed to authenticate user.');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleSendOtp = () => {
-    setError(null);
-    try {
-      const res = AuthService.sendMobileOTP(mobile);
-      setOtpSent(true);
-      setOtpMessage(res.message);
-      startResendCountdown();
-    } catch (err: any) {
-      setError(err.message || 'Failed to send OTP.');
-    }
-  };
-
-  const handleMobileOtpLogin = (e: React.FormEvent) => {
-    e.preventDefault();
-    setError(null);
-    setLoading(true);
-
-    try {
-      AuthService.verifyMobileOTP(mobile, otp);
-      onLoginSuccess();
-    } catch (err: any) {
-      setError(err.message || 'Verification failed.');
     } finally {
       setLoading(false);
     }
@@ -131,7 +80,7 @@ export default function LoginView({ onLoginSuccess }: LoginViewProps) {
     }
   };
 
-  const getRoleIcon = (role: UserRole) => {
+  const getRoleIcon = (role: UserRole | string) => {
     switch (role) {
       case 'SUPER_ADMIN': return <AdminIcon sx={{ color: '#ec4899' }} />;
       case 'COMPANY_ADMIN':
@@ -214,8 +163,7 @@ export default function LoginView({ onLoginSuccess }: LoginViewProps) {
                 }
               }}
             >
-              <Tab label="Email Password" />
-              <Tab label="Mobile OTP" />
+              <Tab label="Email / Mobile Login" />
               <Tab label="Registered Users" />
             </Tabs>
           </Box>
@@ -227,18 +175,17 @@ export default function LoginView({ onLoginSuccess }: LoginViewProps) {
               </Alert>
             )}
 
-            {/* TAB 0: EMAIL & PASSWORD */}
+            {/* TAB 0: EMAIL OR MOBILE & PASSWORD */}
             {tabIndex === 0 && (
-              <form onSubmit={handleEmailLogin}>
+              <form onSubmit={handleLogin}>
                 <Stack spacing={2.5}>
                   <TextField
                     required
                     fullWidth
-                    label="Corporate Email Address"
-                    type="email"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    placeholder="e.g. admin@printopia.com"
+                    label="Email Address or Mobile Number"
+                    value={identifier}
+                    onChange={(e) => setIdentifier(e.target.value)}
+                    placeholder="e.g. admin@printopia.com or 9830012345"
                     slotProps={{
                       input: {
                         startAdornment: (
@@ -310,120 +257,8 @@ export default function LoginView({ onLoginSuccess }: LoginViewProps) {
               </form>
             )}
 
-            {/* TAB 1: MOBILE OTP */}
+            {/* TAB 1: REGISTERED USERS */}
             {tabIndex === 1 && (
-              <form onSubmit={handleMobileOtpLogin}>
-                <Stack spacing={2.5}>
-                  <TextField
-                    required
-                    fullWidth
-                    label="Registered Mobile Number (10 digits)"
-                    value={mobile}
-                    onChange={(e) => setMobile(e.target.value)}
-                    placeholder="e.g. 9830012345"
-                    disabled={otpSent}
-                    slotProps={{
-                      input: {
-                        startAdornment: (
-                          <InputAdornment position="start">
-                            <Typography variant="body2" sx={{ color: '#94a3b8', fontWeight: 'bold' }}>+91</Typography>
-                          </InputAdornment>
-                        )
-                      }
-                    }}
-                    sx={{
-                      '& .MuiOutlinedInput-root': {
-                        color: 'white',
-                        '& fieldset': { borderColor: 'rgba(255, 255, 255, 0.15)' }
-                      },
-                      '& .MuiInputLabel-root': { color: '#94a3b8' }
-                    }}
-                  />
-
-                  {!otpSent ? (
-                    <Button
-                      variant="contained"
-                      size="large"
-                      onClick={handleSendOtp}
-                      disabled={mobile.replace(/\D/g, '').length !== 10}
-                      sx={{ py: 1.5, fontWeight: 'bold', borderRadius: 2.5, textTransform: 'none' }}
-                    >
-                      Send Verification OTP
-                    </Button>
-                  ) : (
-                    <>
-                      {otpMessage && (
-                        <Alert severity="info" sx={{ borderRadius: 2 }}>
-                          {otpMessage} <strong>(OTP code: 123456)</strong>
-                        </Alert>
-                      )}
-
-                      <TextField
-                        required
-                        fullWidth
-                        label="6-Digit OTP Code"
-                        value={otp}
-                        onChange={(e) => setOtp(e.target.value)}
-                        placeholder="Enter 6-digit OTP code"
-                        slotProps={{
-                          input: {
-                            startAdornment: (
-                              <InputAdornment position="start">
-                                <OtpIcon sx={{ color: '#94a3b8' }} />
-                              </InputAdornment>
-                            )
-                          }
-                        }}
-                        sx={{
-                          '& .MuiOutlinedInput-root': {
-                            color: 'white',
-                            '& fieldset': { borderColor: 'rgba(255, 255, 255, 0.15)' }
-                          },
-                          '& .MuiInputLabel-root': { color: '#94a3b8' }
-                        }}
-                      />
-
-                      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <Button
-                          variant="text"
-                          size="small"
-                          onClick={() => {
-                            setOtpSent(false);
-                            setOtp('');
-                          }}
-                          sx={{ color: '#94a3b8' }}
-                        >
-                          Change Mobile Number
-                        </Button>
-
-                        <Button
-                          variant="text"
-                          size="small"
-                          disabled={countdown > 0}
-                          onClick={handleSendOtp}
-                          sx={{ color: countdown > 0 ? '#64748b' : '#60a5fa' }}
-                        >
-                          {countdown > 0 ? `Resend OTP (${countdown}s)` : 'Resend OTP'}
-                        </Button>
-                      </Box>
-
-                      <Button
-                        type="submit"
-                        variant="contained"
-                        size="large"
-                        disabled={loading || otp.length < 6}
-                        sx={{ py: 1.5, fontWeight: 'bold', borderRadius: 2.5, textTransform: 'none' }}
-                      >
-                        Verify OTP & Login
-                      </Button>
-                    </>
-                  )}
-                </Stack>
-              </form>
-            )}
-
-            {/* TAB 2: REGISTERED USERS */}
-            {tabIndex === 2 && (
               <Box>
                 <Typography variant="body2" sx={{ color: '#94a3b8', mb: 2, textAlign: 'center' }}>
                   Click any active account below to test authentication and role context:

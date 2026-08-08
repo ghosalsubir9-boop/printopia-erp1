@@ -22,6 +22,7 @@ import {
 import { X, ArrowDownLeft, Compass } from 'lucide-react';
 import { InventoryItem } from '../types';
 import { InventoryApiService } from '../services/api';
+import { AuthService } from '../../../services/authService';
 
 interface MaterialIssueFormProps {
   open: boolean;
@@ -146,7 +147,7 @@ export default function MaterialIssueForm({
         quantity: Number(quantity),
         unit: selectedItem?.unit || 'KG',
         issuedTo,
-        issuedBy: 'Subir Ghosal', // Simulated user
+        issuedBy: AuthService.getCurrentUser()?.userName || 'System',
         remarks
       });
       onSuccess();

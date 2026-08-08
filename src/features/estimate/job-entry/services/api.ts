@@ -179,8 +179,7 @@ export class EstimateApiService {
   ): Promise<EstimateJob> {
     await delay(400);
     const list = this.getStoredEstimates();
-    const currentCompanyId = AuthService.getCurrentCompanyId();
-    const companyId = job.companyId || currentCompanyId;
+    const companyId = AuthService.requireCurrentCompanyId();
 
     // Financial Year calculations
     const d = new Date();

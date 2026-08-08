@@ -602,10 +602,10 @@ export class PaperApiService {
       this.saveStored(KEYS.RATES, rates);
     }
 
-    const currentCompanyId = AuthService.getCurrentCompanyId();
+    const companyId = AuthService.requireCurrentCompanyId();
     const newPaper: PaperMasterItem = {
       id: paperId,
-      companyId: paper.companyId || currentCompanyId,
+      companyId: companyId,
       scope: paper.scope || 'TENANT',
       paperName: paper.paperName,
       paperCode: paper.paperCode,

@@ -4,6 +4,7 @@
  */
 
 import { VendorMasterItem, VendorFilters } from '../types';
+import { AuthService } from '../../../services/authService';
 
 const STORAGE_VENDORS = 'printopia_vendors';
 
@@ -246,8 +247,8 @@ export class VendorMasterService {
       vendorCode,
       createdAt: timestamp,
       updatedAt: timestamp,
-      createdBy: 'Subir Ghosal',
-      updatedBy: 'Subir Ghosal'
+      createdBy: AuthService.getCurrentUser()?.userName || 'System',
+      updatedBy: AuthService.getCurrentUser()?.userName || 'System'
     };
 
     list.push(newVendor);
@@ -294,7 +295,7 @@ export class VendorMasterService {
       // Retain original vendorCode
       vendorCode: list[index].vendorCode,
       updatedAt: new Date().toISOString(),
-      updatedBy: 'Subir Ghosal'
+      updatedBy: AuthService.getCurrentUser()?.userName || 'System'
     };
 
     list[index] = updatedVendor;

@@ -766,7 +766,7 @@ export default function VendorForm({
                           <strong>Date Created:</strong> {new Date(initialData.createdAt).toLocaleString()}
                         </Typography>
                         <Typography variant="body2" sx={{ fontSize: '0.775rem' }}>
-                          <strong>Created By:</strong> {initialData.createdBy || 'Subir Ghosal'}
+                          <strong>Created By:</strong> {initialData.createdBy || 'System'}
                         </Typography>
                       </Grid>
                       <Grid size={{ xs: 12, sm: 6 }}>
@@ -774,7 +774,7 @@ export default function VendorForm({
                           <strong>Last Modified:</strong> {new Date(initialData.updatedAt).toLocaleString()}
                         </Typography>
                         <Typography variant="body2" sx={{ fontSize: '0.775rem' }}>
-                          <strong>Updated By:</strong> {initialData.updatedBy || 'Subir Ghosal'}
+                          <strong>Updated By:</strong> {initialData.updatedBy || 'System'}
                         </Typography>
                       </Grid>
                     </Grid>

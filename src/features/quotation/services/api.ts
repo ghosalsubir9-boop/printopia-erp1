@@ -36,7 +36,7 @@ export class QuotationApiService {
       AuthService.assertTenantAccess(quotations[index].companyId, AuthService.getCurrentUser());
     }
 
-    const companyId = quotation.companyId || currentCompanyId;
+    const companyId = AuthService.requireCurrentCompanyId();
     const preparedQuotation: QuotationHeader = {
       ...quotation,
       companyId

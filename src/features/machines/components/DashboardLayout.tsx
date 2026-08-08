@@ -680,7 +680,7 @@ export default function DashboardLayout({ children, activeModule = 'machines', o
               }
               sx={{ mb: 2, borderRadius: 2.5, fontWeight: 'bold' }}
             >
-              SUPER ADMIN SUPPORT MODE: Currently inspecting tenant data for <strong>{currentTenant?.companyName}</strong> ({currentTenant?.companyCode}).
+              Viewing: <strong>{currentTenant?.companyName}</strong> ({currentTenant?.companyCode || currentTenant?.id})
             </Alert>
           )}
 

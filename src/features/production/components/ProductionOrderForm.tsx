@@ -42,6 +42,7 @@ import {
 } from '@mui/icons-material';
 import { ProductionOrder, JobItem, POStatus, POPriority } from '../types';
 import { ProductionApiService } from '../services/api';
+import { AuthService } from '../../../services/authService';
 import { ProformaInvoice } from '../../proforma-invoice/types';
 import { PIApiService } from '../../proforma-invoice/services/api';
 
@@ -158,7 +159,8 @@ export default function ProductionOrderForm({
         items: initialData ? (formData.items || []) : validItems
       };
       if (finalData.status === 'Approved') {
-        finalData.approvedBy = 'Subir Ghosal';
+        const currentUser = AuthService.getCurrentUser();
+        finalData.approvedBy = currentUser?.userName || 'System';
         finalData.approvedAt = new Date().toISOString();
       }
       if (initialData) {

@@ -370,13 +370,28 @@ export class CustomerMasterService {
     this.initStorage();
     const rawData = localStorage.getItem(STORAGE_CUSTOMERS);
     const allCustomers: CustomerMasterItem[] = rawData ? JSON.parse(rawData) : [];
-    const currentCompanyId = AuthService.getCurrentCompanyId();
+    const companyId = AuthService.requireCurrentCompanyId();
+    const currentUser = AuthService.getCurrentUser();
+    const userName = currentUser?.userName || 'System';
 
-    // Generate consecutive CUST CODE
-    const tenantCustomers = allCustomers.filter((c) => c.companyId === currentCompanyId);
-    const nextSeq = tenantCustomers.length + 1;
+    // Calculate max sequence among existing tenant customers to ensure stable sequential code
+    const tenantCustomers = allCustomers.filter((c) => c.companyId === companyId);
+    let maxSeq = 0;
+    tenantCustomers.forEach((c) => {
+      if (c.customerCode) {
+        const parts = c.customerCode.split(/[-/]/);
+        const lastPart = parts[parts.length - 1];
+        const num = parseInt(lastPart, 10);
+        if (!isNaN(num) && num > maxSeq) {
+          maxSeq = num;
+        }
+      }
+    });
+
+    const nextSeq = maxSeq + 1;
     const paddedSeq = String(nextSeq).padStart(4, '0');
-    const customerCode = `CUST-26-${paddedSeq}`;
+    const yr = String(new Date().getFullYear()).slice(-2);
+    const customerCode = `CUST-${yr}-${paddedSeq}`;
 
     const newId = `cust-${Date.now()}`;
     const timestamp = new Date().toISOString();
@@ -384,12 +399,12 @@ export class CustomerMasterService {
     const newCustomer: CustomerMasterItem = {
       ...customer,
       id: newId,
-      companyId: customer.companyId || currentCompanyId,
+      companyId: companyId, // Enforce tenant isolation
       customerCode,
       createdAt: timestamp,
       updatedAt: timestamp,
-      createdBy: 'Subir Ghosal',
-      updatedBy: 'Subir Ghosal'
+      createdBy: userName,
+      updatedBy: userName
     };
 
     allCustomers.push(newCustomer);
@@ -444,9 +459,11 @@ export class CustomerMasterService {
     }
 
     const current = allCustomers[index];
-    AuthService.assertTenantAccess(current.companyId, AuthService.getCurrentUser());
+    const currentUser = AuthService.getCurrentUser();
+    AuthService.assertTenantAccess(current.companyId, currentUser);
 
     const timestamp = new Date().toISOString();
+    const userName = currentUser?.userName || 'System';
 
     const updatedCustomer: CustomerMasterItem = {
       ...current,
@@ -454,7 +471,7 @@ export class CustomerMasterService {
       id, // protect id
       customerCode: current.customerCode, // protect code
       updatedAt: timestamp,
-      updatedBy: 'Subir Ghosal'
+      updatedBy: userName
     };
 
     allCustomers[index] = updatedCustomer;

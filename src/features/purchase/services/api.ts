@@ -6,6 +6,7 @@
 import { PurchaseOrderHeader, PurchaseOrderItem, GoodsReceiptNote, GRNItem, POStatus, MaterialStock } from '../types';
 import { PaperApiService } from '../../paper-master/services/api';
 import { GstUtils } from '../../gst-management/utils/gstUtils';
+import { AuthService } from '../../../services/authService';
 
 const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -344,8 +345,8 @@ export class PurchaseApiService {
       grandTotal,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
-      createdBy: 'Subir Ghosal',
-      updatedBy: 'Subir Ghosal'
+      createdBy: AuthService.getCurrentUser()?.userName || 'System',
+      updatedBy: AuthService.getCurrentUser()?.userName || 'System'
     };
 
     pos.unshift(newPO);
@@ -434,7 +435,7 @@ export class PurchaseApiService {
       roundOff,
       grandTotal,
       updatedAt: new Date().toISOString(),
-      updatedBy: 'Subir Ghosal'
+      updatedBy: AuthService.getCurrentUser()?.userName || 'System'
     };
 
     pos[index] = updatedPO;
@@ -589,7 +590,7 @@ export class PurchaseApiService {
       grnNumber,
       items: processedItems,
       createdAt: new Date().toISOString(),
-      createdBy: 'Subir Ghosal'
+      createdBy: AuthService.getCurrentUser()?.userName || 'System'
     };
 
     // If NOT draft, perform stock increases and PO progress update
@@ -726,7 +727,7 @@ export class PurchaseApiService {
     }
     targetPO.status = nextStatus;
     targetPO.updatedAt = new Date().toISOString();
-    targetPO.updatedBy = 'Subir Ghosal';
+    targetPO.updatedBy = AuthService.getCurrentUser()?.userName || 'System';
 
     pos[poIndex] = targetPO;
     this.saveStored(KEYS.POS, pos);

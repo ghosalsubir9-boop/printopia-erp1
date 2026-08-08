@@ -195,7 +195,7 @@ export default function PeriodManagement() {
                          period.status === 'Ready to File' ? 'Mark Filed' : 'Lock Period'}
                       </Button>
                     )}
-                    {(period.status === 'Locked' || period.status === 'Filed') && currentUser?.role === 'Admin' && (
+                    {(period.status === 'Locked' || period.status === 'Filed') && (currentUser?.role === 'COMPANY_ADMIN' || currentUser?.role === 'SUPER_ADMIN') && (
                       <Button 
                         size="small" 
                         startIcon={<LockOpen />} 
