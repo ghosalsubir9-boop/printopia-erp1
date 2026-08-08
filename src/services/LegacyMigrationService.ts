@@ -4,14 +4,20 @@
  */
 
 export const MIGRATION_VERSION_KEY = 'MULTI_TENANT_MIGRATION_V1';
+export const MIGRATION_V2_VERSION_KEY = 'MULTI_TENANT_MIGRATION_V2';
 export const DEFAULT_DEMO_TENANT_ID = 'company-1';
 
 export class LegacyMigrationService {
   /**
    * Idempotent migration that assigns all existing records missing companyId
-   * to the default tenant (PRINTOPIA_DEMO / company-1).
+   * to the default tenant (PRINTOPIA_DEMO / company-1) and handles customer child record tenant binding.
    */
   public static runMigrationIfNeeded(): void {
+    this.runMigrationV1();
+    this.runMigrationV2();
+  }
+
+  private static runMigrationV1(): void {
     const isCompleted = localStorage.getItem(MIGRATION_VERSION_KEY);
     if (isCompleted === 'true') {
       return;
@@ -115,5 +121,61 @@ export class LegacyMigrationService {
     // Mark migration as completed
     localStorage.setItem(MIGRATION_VERSION_KEY, 'true');
     console.log('[LegacyMigrationService] MULTI_TENANT_MIGRATION_V1 completed successfully.');
+  }
+
+  public static runMigrationV2(): void {
+    const isCompleted = localStorage.getItem(MIGRATION_V2_VERSION_KEY);
+    if (isCompleted === 'true') {
+      return;
+    }
+
+    console.log('[LegacyMigrationService] Running MULTI_TENANT_MIGRATION_V2 for Customer Child Records...');
+
+    try {
+      const rawCustomers = localStorage.getItem('printopia_customers');
+      const customers: any[] = rawCustomers ? JSON.parse(rawCustomers) : [];
+      const customerCompanyMap = new Map<string, string>();
+      customers.forEach((c) => {
+        if (c && c.id && c.companyId) {
+          customerCompanyMap.set(c.id, c.companyId);
+        }
+      });
+
+      const childKeys = [
+        'printopia_customer_contacts',
+        'printopia_customer_addresses',
+        'printopia_customer_history',
+        'printopia_customer_documents'
+      ];
+
+      for (const key of childKeys) {
+        const raw = localStorage.getItem(key);
+        if (raw) {
+          const items = JSON.parse(raw);
+          if (Array.isArray(items)) {
+            let modified = false;
+            items.forEach((item: any) => {
+              if (item && typeof item === 'object' && !item.companyId && item.customerId) {
+                const parentCompanyId = customerCompanyMap.get(item.customerId);
+                if (parentCompanyId) {
+                  item.companyId = parentCompanyId;
+                  modified = true;
+                }
+              }
+            });
+
+            if (modified) {
+              localStorage.setItem(key, JSON.stringify(items));
+              console.log(`[LegacyMigrationService] Migrated missing companyId for child key ${key}`);
+            }
+          }
+        }
+      }
+    } catch (err) {
+      console.error('[LegacyMigrationService] Error during V2 child records migration:', err);
+    }
+
+    localStorage.setItem(MIGRATION_V2_VERSION_KEY, 'true');
+    console.log('[LegacyMigrationService] MULTI_TENANT_MIGRATION_V2 completed successfully.');
   }
 }

@@ -27,6 +27,7 @@ export interface PurchaseOrderItem {
 
 export interface PurchaseOrderHeader {
   id: string;
+  companyId: string;
   poNumber: string; // Auto format: PUR-2026-000001
   poDate: string;
   vendorId: string;
@@ -79,6 +80,7 @@ export interface GRNItem {
 
 export interface GoodsReceiptNote {
   id: string;
+  companyId?: string;
   grnNumber: string; // Format: GRN-2026-000001
   grnDate: string;
   poId: string;

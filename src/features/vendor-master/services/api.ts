@@ -12,6 +12,7 @@ const STORAGE_VENDORS = 'printopia_vendors';
 const SEED_VENDORS: VendorMasterItem[] = [
   {
     id: 'vend-1',
+    companyId: 'company-1',
     vendorCode: 'VEN-000001',
     vendorName: 'Nippon Paper Trading Co.',
     contactPerson: 'Mr. Kenji Sato',
@@ -49,6 +50,7 @@ const SEED_VENDORS: VendorMasterItem[] = [
   },
   {
     id: 'vend-2',
+    companyId: 'company-1',
     vendorCode: 'VEN-000002',
     vendorName: 'Supercoat Plates & Chemicals',
     contactPerson: 'Mr. Rajesh Mehra',
@@ -86,6 +88,7 @@ const SEED_VENDORS: VendorMasterItem[] = [
   },
   {
     id: 'vend-3',
+    companyId: 'company-1',
     vendorCode: 'VEN-000003',
     vendorName: 'Galaxy Lam & Finishers',
     contactPerson: 'Mr. Anand Kulkarni',
@@ -240,10 +243,12 @@ export class VendorMasterService {
     const vendorCode = this.generateNextVendorCode();
     const newId = `vend-${Date.now()}`;
     const timestamp = new Date().toISOString();
+    const companyId = AuthService.requireCurrentCompanyId();
 
     const newVendor: VendorMasterItem = {
       ...vendor,
       id: newId,
+      companyId,
       vendorCode,
       createdAt: timestamp,
       updatedAt: timestamp,

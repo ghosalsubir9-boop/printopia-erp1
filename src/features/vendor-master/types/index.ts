@@ -55,6 +55,7 @@ export interface VendorBusinessDetails {
 export interface VendorMasterItem {
   linkedLedgerCode?: string;
   id: string;
+  companyId: string;
   vendorCode: string; // Format: VEN-000001
   vendorName: string;
   contactPerson: string;

@@ -23,6 +23,7 @@ const initialPurchaseOrders = (): PurchaseOrderHeader[] => {
 
   const po1: PurchaseOrderHeader = {
     id: 'po-1',
+    companyId: 'company-1',
     poNumber: 'PUR-2026-000001',
     poDate: dateStr1.split('T')[0],
     vendorId: 'vend-1', // Nippon Paper Trading Co.
@@ -81,6 +82,7 @@ const initialPurchaseOrders = (): PurchaseOrderHeader[] => {
 
   const po2: PurchaseOrderHeader = {
     id: 'po-2',
+    companyId: 'company-1',
     poNumber: 'PUR-2026-000002',
     poDate: dateStr2.split('T')[0],
     vendorId: 'vend-2', // Supercoat Plates & Chemicals
@@ -331,10 +333,12 @@ export class PurchaseApiService {
     const roundOff = parseFloat((grandTotal - netAmount).toFixed(4));
 
     const poNumber = this.generateNextPONumber(pos);
+    const companyId = AuthService.requireCurrentCompanyId();
 
     const newPO: PurchaseOrderHeader = {
       ...poData,
       id: `po-${Date.now()}`,
+      companyId,
       poNumber,
       items,
       subTotal: parseFloat(subTotal.toFixed(2)),
