@@ -142,24 +142,44 @@ export default function JobCardDetails({ jobCard, currentRole, onBack, onUpdate 
   const isReadOnly = currentRole === 'SALES_EXECUTIVE' || currentRole === 'ACCOUNTS';
   const canUpdateArtwork = currentRole === 'SUPER_ADMIN' || currentRole === 'COMPANY_ADMIN' || currentRole === 'DESIGNER';
   const canUpdateProduction = currentRole === 'SUPER_ADMIN' || currentRole === 'COMPANY_ADMIN' || currentRole === 'PRINTER';
-  const canUpdateQC = currentRole === 'SUPER_ADMIN' || currentRole === 'COMPANY_ADMIN' || currentRole === 'PRINTER';
-  const canUpdateDispatch = currentRole === 'SUPER_ADMIN' || currentRole === 'COMPANY_ADMIN' || currentRole === 'PRINTER';
-  const canTransitionStatus = currentRole === 'SUPER_ADMIN' || currentRole === 'COMPANY_ADMIN' || currentRole === 'PRINTER' || currentRole === 'DESIGNER';
+  const canUpdateQC = currentRole === 'SUPER_ADMIN' || currentRole === 'COMPANY_ADMIN';
+  const canUpdateDispatch = currentRole === 'SUPER_ADMIN' || currentRole === 'COMPANY_ADMIN';
+
+  const getAllowedStagesByRole = (currentStatus: JobCardStatus): JobCardStatus[] => {
+    const defaultAllowed = getNextAllowedStages(currentStatus);
+    if (currentRole === 'SUPER_ADMIN' || currentRole === 'COMPANY_ADMIN') {
+      return defaultAllowed;
+    }
+    if (currentRole === 'DESIGNER') {
+      return defaultAllowed.filter(st => st === 'Artwork Ready');
+    }
+    if (currentRole === 'PRINTER') {
+      return defaultAllowed.filter(st => 
+        st === 'Paper Issued' || 
+        st === 'Plate Issued' || 
+        st === 'Machine Queue' || 
+        st === 'Printing'
+      );
+    }
+    return [];
+  };
+
+  const allowedStages = getAllowedStagesByRole(jobCard.status);
+  const canTransitionStatus = allowedStages.length > 0;
 
   const handleOpenStatusDialog = () => {
-    const allowed = getNextAllowedStages(jobCard.status);
-    if (allowed.length === 0) {
-      setError("This job card is in a terminal stage and cannot transition further.");
+    if (allowedStages.length === 0) {
+      setError("This job card is in a terminal stage or you do not have permission to transition it.");
       return;
     }
-    setNextStage(allowed[0]);
+    setNextStage(allowedStages[0]);
     setStatusDialogOpen(true);
   };
 
   const handleSaveStatusTransition = async () => {
     if (!nextStage) return;
     try {
-      await JobCardApiService.transitionJobCardStatus(jobCard.id, nextStage, transitionRemarks, currentRole);
+      await JobCardApiService.transitionJobCardStatus(jobCard.id, nextStage, transitionRemarks);
       setSuccess(`Job Card transitioned to ${nextStage} successfully!`);
       setStatusDialogOpen(false);
       setTransitionRemarks('');
@@ -1306,7 +1326,7 @@ export default function JobCardDetails({ jobCard, currentRole, onBack, onUpdate 
               onChange={(e) => setNextStage(e.target.value as JobCardStatus)}
               label="Next Target Stage"
             >
-              {getNextAllowedStages(jobCard.status).map(st => (
+              {allowedStages.map(st => (
                 <MenuItem key={st} value={st}>{st}</MenuItem>
               ))}
             </Select>

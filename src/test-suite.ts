@@ -703,7 +703,7 @@ async function runTests() {
     await ProductionApiService.createOrder(badDraft);
     assert(false, 'Should block PO creation from unapproved PI.');
   } catch (e: any) {
-    assert(e.message.includes('explicit Production Approval'), `Verify: Block creation if PI is not production-approved.`);
+    assert(e.message.toLowerCase().includes('explicitly approved') || e.message.includes('explicit Production Approval'), `Verify: Block creation if PI is not production-approved.`);
   }
 
   try {
@@ -781,6 +781,7 @@ async function runTests() {
       salesExecutive: po.salesExecutive,
       priority: 'Normal',
       expectedDeliveryDate: po.deliveryDate,
+      productionOrderItemId: po.items[0]?.id || 'po-item-1',
       items: po.items.map(i => ({
         jobItemId: i.id,
         productId: i.productId || 'N/A',
@@ -835,6 +836,7 @@ async function runTests() {
     salesExecutive: approvedPO.salesExecutive,
     priority: 'Normal',
     expectedDeliveryDate: approvedPO.deliveryDate,
+    productionOrderItemId: approvedPO.items[0]?.id || 'po-item-1',
     items: approvedPO.items.map(i => ({
       jobItemId: i.id,
       productId: i.productId || 'N/A',
@@ -887,6 +889,7 @@ async function runTests() {
       salesExecutive: approvedPO.salesExecutive,
       priority: 'Normal',
       expectedDeliveryDate: approvedPO.deliveryDate,
+      productionOrderItemId: approvedPO.items[0]?.id || 'po-item-1',
       items: approvedPO.items.map(i => ({
         jobItemId: i.id,
         productId: i.productId || 'N/A',
@@ -924,7 +927,7 @@ async function runTests() {
     });
     assert(false, 'Should block duplicate Job Card creation for the same PO.');
   } catch (e: any) {
-    assert(e.message.includes('already been generated'), 'Verify: Duplicate Job Card for the same PO is blocked.');
+    assert(e.message.includes('Already Created') || e.message.includes('already been generated') || e.message.includes('already has an active Job Card'), 'Verify: Duplicate Job Card for the same PO is blocked.');
   }
 
   // 10. Tenant isolation for Job Cards

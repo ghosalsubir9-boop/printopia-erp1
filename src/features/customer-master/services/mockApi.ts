@@ -429,7 +429,7 @@ export class CustomerMasterService {
     const yr = String(new Date().getFullYear()).slice(-2);
     const customerCode = `CUST-${yr}-${paddedSeq}`;
 
-    const newId = `cust-${Date.now()}`;
+    const newId = `cust-${Date.now()}-${Math.floor(Math.random() * 1000000)}`;
     const timestamp = new Date().toISOString();
 
     const newCustomer: CustomerMasterItem = {
@@ -448,7 +448,7 @@ export class CustomerMasterService {
 
     // Seed default primary contact and billing/shipping addresses derived from the main form
     this.addContact({
-      id: `cont-${Date.now()}`,
+      id: `cont-${Date.now()}-${Math.floor(Math.random() * 1000000)}`,
       customerId: newId,
       name: customer.contactPerson,
       department: 'Main Contact',
@@ -457,7 +457,7 @@ export class CustomerMasterService {
     });
 
     this.addAddress({
-      id: `addr-${Date.now()}-bill`,
+      id: `addr-${Date.now()}-${Math.floor(Math.random() * 1000000)}-bill`,
       customerId: newId,
       addressType: 'Billing',
       addressLine: customer.billingAddress,
@@ -469,7 +469,7 @@ export class CustomerMasterService {
     });
 
     this.addAddress({
-      id: `addr-${Date.now()}-ship`,
+      id: `addr-${Date.now()}-${Math.floor(Math.random() * 1000000)}-ship`,
       customerId: newId,
       addressType: 'Shipping',
       addressLine: customer.shippingAddress,
@@ -584,7 +584,7 @@ export class CustomerMasterService {
     const list: CustomerContact[] = rawData ? JSON.parse(rawData) : [];
     const newContact: CustomerContact = {
       ...contact,
-      id: contact.id || `cont-${Date.now()}`,
+      id: contact.id || `cont-${Date.now()}-${Math.floor(Math.random() * 1000000)}`,
       companyId
     };
     list.push(newContact);
@@ -647,7 +647,7 @@ export class CustomerMasterService {
     const list: CustomerAddress[] = rawData ? JSON.parse(rawData) : [];
     const newAddress: CustomerAddress = {
       ...address,
-      id: address.id || `addr-${Date.now()}`,
+      id: address.id || `addr-${Date.now()}-${Math.floor(Math.random() * 1000000)}`,
       companyId
     };
     // If isDefault is true, set others of same type to false

@@ -448,20 +448,20 @@ export class DevelopmentLocalJobCardRepository {
       throw new Error('Access Denied: The linked Production Order does not belong to your organization.');
     }
 
-    // 3. Validate status is Approved (or Converted to Production/Partially Converted which are valid conversion source states)
-    if (po.status !== 'Approved' && po.status !== 'Partially Converted' && po.status !== 'In Production') {
-      throw new Error(`Cannot generate Job Card. Production Order '${po.poNumber}' must be Approved or active (current status: '${po.status}').`);
-    }
-
     const productionOrderItemId = jobCardData.productionOrderItemId;
     if (!productionOrderItemId) {
       throw new Error('productionOrderItemId is required to create a Job Card.');
     }
 
-    // 4. Duplicate protection: PO item must not already have an active Job Card
+    // 3. Duplicate protection: PO item must not already have an active Job Card
     const duplicate = list.find(jc => jc.productionOrderItemId === productionOrderItemId && jc.companyId === companyId && jc.status !== 'Cancelled');
     if (duplicate) {
       throw new Error('Job Card Already Created');
+    }
+
+    // 4. Validate status is Approved (or Converted to Production/Partially Converted which are valid conversion source states)
+    if (po.status !== 'Approved' && po.status !== 'Partially Converted' && po.status !== 'In Production') {
+      throw new Error(`Cannot generate Job Card. Production Order '${po.poNumber}' must be Approved or active (current status: '${po.status}').`);
     }
 
     // 5. Generate JC Number using tenant-aware sequential FY numbering e.g. JC/2026-27/0001
@@ -626,7 +626,7 @@ export class DevelopmentLocalJobCardRepository {
     id: string,
     nextStatus: JobCardStatus,
     remarks: string,
-    user: string = 'Admin'
+    user?: string
   ): Promise<JobCard> {
     await delay(300);
     const list = this.getStoredJobCards();
@@ -785,11 +785,16 @@ export class DevelopmentLocalJobCardRepository {
     }
 
     const timestamp = new Date().toISOString();
+    const currentUser = AuthService.getCurrentUser();
+    const auditUserString = currentUser 
+      ? `${currentUser.userName} (${currentUser.userId})` 
+      : (user || 'System');
+
     const newHistory: JobCardStatusHistory = {
       id: `jch-${Date.now()}`,
       stage: nextStatus,
       timestamp,
-      user,
+      user: auditUserString,
       remarks: remarks || `Transitioned to ${nextStatus}`
     };
 
@@ -819,7 +824,7 @@ export class DevelopmentLocalJobCardRepository {
     itemId: string,
     nextStatus: JobCardStatus,
     remarks: string,
-    user: string = 'Admin'
+    user?: string
   ): Promise<JobCard> {
     await delay(300);
     const list = this.getStoredJobCards();
@@ -927,11 +932,16 @@ export class DevelopmentLocalJobCardRepository {
     const derivedStatus = deriveParentStatus(jobCard.items);
     
     const timestamp = new Date().toISOString();
+    const currentUser = AuthService.getCurrentUser();
+    const auditUserString = currentUser 
+      ? `${currentUser.userName} (${currentUser.userId})` 
+      : (user || 'System');
+
     const newHistory: JobCardStatusHistory = {
       id: `jch-${Date.now()}`,
       stage: derivedStatus,
       timestamp,
-      user,
+      user: auditUserString,
       remarks: `Item '${item.productName}' transitioned to ${nextStatus}. ${remarks}`
     };
 
