@@ -387,12 +387,20 @@ export type JobCardStatus =
   | 'Plate Issued'
   | 'Machine Queue'
   | 'Printing'
+  | 'Cutting Pending'
+  | 'Cutting In Progress'
+  | 'Cutting Completed'
+  | 'Finishing Pending'
+  | 'Finishing In Progress'
+  | 'Finishing Completed'
+  | 'QC Pending'
   | 'QC'
   | 'Rework'
   | 'Ready for Dispatch'
   | 'Partially Dispatched'
   | 'Dispatched'
   | 'Delivered'
+  | 'Completed'
   | 'Cancelled';
 
 export type ArtworkStatus =
@@ -508,6 +516,16 @@ export interface JobCardReportData {
   reworkReport: { id: string; number: string; reason: string; item: string }[];
 }
 
+export interface FinishingTask {
+  taskName: string;
+  required: boolean;
+  assignedUser: string;
+  status: 'Pending' | 'In Progress' | 'Completed';
+  start?: string;
+  complete?: string;
+  notes?: string;
+}
+
 export interface JobCardItem {
   id: string;
   jobCardId: string;
@@ -549,6 +567,7 @@ export interface JobCardItem {
   artworkStatus?: ArtworkStatus;
   qcStatus?: 'Pending' | 'Approved' | 'Partially Approved' | 'Rework Required' | 'Rejected';
   dispatchedQuantity?: number;
+  finishingTasks?: FinishingTask[];
 }
 
 export interface JobCard {

@@ -258,10 +258,10 @@ export class AuthService {
         'credit-notes', 'company-settings', 'job-cards'
       ],
       'DESIGNER': [
-        'dashboard', 'products', 'papers', 'estimates', 'job-cards', 'production'
+        'dashboard', 'products', 'papers', 'estimates', 'job-cards', 'production', 'production-execution', 'production-machine-queue'
       ],
       'PRINTER': [
-        'dashboard', 'machines', 'papers', 'job-cards', 'production', 'inventory', 'grns'
+        'dashboard', 'machines', 'papers', 'job-cards', 'production', 'production-execution', 'production-machine-queue', 'inventory', 'grns'
       ],
       'ACCOUNTS': [
         'dashboard', 'customers', 'vendors', 'quotations', 'proforma-invoices',

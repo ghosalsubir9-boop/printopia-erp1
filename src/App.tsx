@@ -128,8 +128,14 @@ export default function App() {
           initialQuotationData={initialPIData}
           onConvertToProduction={handleConvertToProduction}
         />
-      ) : activeModule === 'production' ? (
-        <ProductionModule initialPI={initialPOData} />
+      ) : activeModule === 'production' || activeModule === 'production-execution' || activeModule === 'production-machine-queue' ? (
+        <ProductionModule
+          initialPI={initialPOData}
+          initialActiveTab={
+            activeModule === 'production-execution' ? 1 :
+            activeModule === 'production-machine-queue' ? 2 : 0
+          }
+        />
       ) : activeModule === 'job-cards' ? (
         <JobCardMaster />
       ) : activeModule === 'purchase-orders' || activeModule === 'grns' ? (

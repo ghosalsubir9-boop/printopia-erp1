@@ -66,6 +66,18 @@ export function getNextAllowedStages(current: JobCardStatus): JobCardStatus[] {
     case 'Machine Queue':
       return ['Printing', 'Cancelled'];
     case 'Printing':
+      return ['Cutting Pending', 'Finishing Pending', 'QC', 'Cancelled'];
+    case 'Cutting Pending':
+      return ['Cutting In Progress', 'Cancelled'];
+    case 'Cutting In Progress':
+      return ['Cutting Completed', 'Cancelled'];
+    case 'Cutting Completed':
+      return ['Finishing Pending', 'QC', 'Cancelled'];
+    case 'Finishing Pending':
+      return ['Finishing In Progress', 'Cancelled'];
+    case 'Finishing In Progress':
+      return ['Finishing Completed', 'QC', 'Cancelled'];
+    case 'Finishing Completed':
       return ['QC', 'Cancelled'];
     case 'QC':
       return ['Rework', 'Ready for Dispatch', 'Cancelled'];
@@ -597,6 +609,80 @@ export class DevelopmentLocalJobCardRepository {
     return newJobCard;
   }
 
+  public static logActivity(jobCardId: string, action: string, notes: string): void {
+    const currentUser = AuthService.getCurrentUser();
+    const companyId = AuthService.getCurrentCompanyId() || 'unknown';
+    const logsKey = 'printopia_production_activities';
+    let logs: any[] = [];
+    try {
+      logs = JSON.parse(localStorage.getItem(logsKey) || '[]');
+    } catch (e) {}
+
+    const newLog = {
+      id: `act-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+      companyId,
+      userId: currentUser?.userId || 'system',
+      userName: currentUser?.userName || 'System',
+      timestamp: new Date().toISOString(),
+      action,
+      jobCardId,
+      notes
+    };
+    logs.push(newLog);
+    localStorage.setItem(logsKey, JSON.stringify(logs));
+  }
+
+  public static async reopenJobCard(id: string, reason: string): Promise<JobCard> {
+    await delay(300);
+    const currentUser = AuthService.getCurrentUser();
+    if (!currentUser || !['COMPANY_ADMIN', 'SUPER_ADMIN'].includes(currentUser.role)) {
+      throw new Error("Unauthorized: Only COMPANY_ADMIN or SUPER_ADMIN can reopen a completed Job Card.");
+    }
+
+    const list = this.getStoredJobCards();
+    const index = list.findIndex(item => item.id === id);
+    if (index === -1) throw new Error("Job Card not found.");
+
+    const jobCard = list[index];
+    if (jobCard.status !== 'Completed') {
+      throw new Error("Job Card is not in Completed status.");
+    }
+
+    const now = new Date().toISOString();
+    const updatedHistory = [
+      ...(jobCard.statusHistory || []),
+      {
+        id: `hist-${Date.now()}`,
+        stage: 'QC' as JobCardStatus,
+        timestamp: now,
+        user: `${currentUser.userName} (${currentUser.userId})`,
+        remarks: `Job Reopened. Reason: ${reason}`
+      }
+    ];
+
+    // Reset item status as well
+    const updatedItems = jobCard.items.map(item => {
+      if (item.status !== 'Cancelled') {
+        return { ...item, status: 'QC' as JobCardStatus };
+      }
+      return item;
+    });
+
+    const updatedCard: JobCard = {
+      ...jobCard,
+      status: 'QC',
+      items: updatedItems,
+      statusHistory: updatedHistory,
+      updatedAt: now
+    };
+
+    this.logActivity(jobCard.id, 'Job Reopened', `Reopened because: ${reason}`);
+
+    list[index] = updatedCard;
+    this.saveJobCards(list);
+    return updatedCard;
+  }
+
   public static async updateJobCard(id: string, updatedFields: Partial<JobCard>): Promise<JobCard> {
     await delay(300);
     const list = this.getStoredJobCards();
@@ -607,6 +693,12 @@ export class DevelopmentLocalJobCardRepository {
     const current = list[index];
     AuthService.assertTenantAccess(current.companyId, AuthService.getCurrentUser());
 
+    // Rule 26: Completed job protection
+    const isReopening = updatedFields.statusHistory?.some(h => h.remarks?.toLowerCase().includes('reopened') || h.remarks?.toLowerCase().includes('reopen'));
+    if (current.status === 'Completed' && !isReopening) {
+      throw new Error("Completed jobs are locked and cannot be modified.");
+    }
+
     // PROTECT companyId and jobCardNumber DURING UPDATE
     const updatedCard = {
       ...current,
@@ -616,6 +708,9 @@ export class DevelopmentLocalJobCardRepository {
       jobCardNumber: current.jobCardNumber, // protect JC number integrity
       updatedAt: new Date().toISOString()
     };
+
+    // Log update activity
+    this.logActivity(id, 'Job Card Updated', `Updated fields: ${Object.keys(updatedFields).join(', ')}`);
 
     list[index] = updatedCard;
     this.saveJobCards(list);

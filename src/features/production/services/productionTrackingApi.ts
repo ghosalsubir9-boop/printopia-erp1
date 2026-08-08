@@ -183,6 +183,22 @@ export class ProductionTrackingApiService {
     const oldStatus = currentJob.status || 'Planning';
     const newStatus = updates.status || oldStatus;
 
+    // Completed Job Protection
+    if (currentJob.status === 'Completed' && updates.status !== 'Completed') {
+      const isReopening = remarks?.toLowerCase().includes('reopen') || remarks?.toLowerCase().includes('reopened');
+      if (!isReopening) {
+        throw new Error("Completed jobs are locked and cannot be modified.");
+      }
+    }
+
+    // Validate role checks and prerequisites at API level
+    if (updates.status && updates.status !== oldStatus) {
+      const validationErrors = await this.validateAction(jobId, updates.status, updates);
+      if (validationErrors.length > 0) {
+        throw new Error(validationErrors.join(" "));
+      }
+    }
+
     // Create a timeline event if status is changing
     const updatedTimeline = [...(currentJob.timeline || [])];
     if (updates.status && updates.status !== oldStatus) {
@@ -238,6 +254,21 @@ export class ProductionTrackingApiService {
     const targetJob = jobs.find(j => j.id === jobId);
     if (!targetJob) throw new Error("Job not found.");
 
+    // 1. Role Guard
+    const currentUser = AuthService.getCurrentUser();
+    if (!currentUser || !['COMPANY_ADMIN', 'SUPER_ADMIN'].includes(currentUser.role)) {
+      throw new Error("Unauthorized: Only COMPANY_ADMIN or SUPER_ADMIN can assign or move jobs between machines.");
+    }
+
+    // 2. Tenant isolation on machine assignment
+    const machines = await MachineApiService.getMachines().catch(() => []);
+    const machine = machines.find(m => m.id === machineId);
+    if (machine) {
+      if (machine.companyId && machine.companyId !== targetJob.companyId) {
+        throw new Error("Unauthorized: Selected machine does not belong to the current company.");
+      }
+    }
+
     const oldMachineName = targetJob.assignedMachineName || "Unassigned";
 
     // Find current jobs in target machine to append at the end of queue
@@ -263,6 +294,11 @@ export class ProductionTrackingApiService {
     machineId: string,
     orderedJobIds: string[]
   ): Promise<void> {
+    const currentUser = AuthService.getCurrentUser();
+    if (!currentUser || !['COMPANY_ADMIN', 'SUPER_ADMIN'].includes(currentUser.role)) {
+      throw new Error("Unauthorized: Only COMPANY_ADMIN or SUPER_ADMIN can reorder the machine queue.");
+    }
+
     const orders = await ProductionApiService.getOrders();
     
     // For each ordered Job ID, locate its parent PO, update queuePosition, and save
@@ -294,7 +330,8 @@ export class ProductionTrackingApiService {
    */
   public static async validateAction(
     jobId: string,
-    nextStage: ProductionStage
+    nextStage: ProductionStage,
+    updates?: Partial<JobItem>
   ): Promise<string[]> {
     const errors: string[] = [];
     const jobs = await this.getJobs();
@@ -304,36 +341,113 @@ export class ProductionTrackingApiService {
       return errors;
     }
 
+    const currentUser = AuthService.getCurrentUser();
+    const companyId = AuthService.requireCurrentCompanyId();
+
     // Completed jobs cannot be restarted without authorized action (handled in component/action UI)
     if (job.status === 'Completed' && nextStage !== 'Completed') {
-      // Re-opening is blocked unless authorized
       errors.push("Completed jobs cannot be modified or restarted without authorization.");
     }
 
     // Rules for starting printing
-    if (nextStage === 'Printing Started' || nextStage === 'Printing Completed' || nextStage === 'Drying') {
-      // 1. Assigned Machine required before printing starts
-      if (!job.assignedMachineId || job.assignedMachineId === 'unassigned') {
-        errors.push("An Assigned Machine is required before printing can start.");
+    if (nextStage === 'Printing Started') {
+      // 1. Current user permission check: MUST be SUPER_ADMIN, COMPANY_ADMIN, or PRINTER
+      if (!currentUser || !['SUPER_ADMIN', 'COMPANY_ADMIN', 'PRINTER'].includes(currentUser.role)) {
+        errors.push("User does not have permission to perform this action.");
       }
 
-      // 2. Paper must be issued before Printing Started
-      // Check if Paper Issue Slips exist and are Fully Issued or sum meets requirements
+      // 2. Job Card validations
+      const { JobCardApiService } = await import('./jobCardApi');
+      const allJobCards = await JobCardApiService.getJobCards().catch(() => []);
+      const jobCard = allJobCards.find(jc => jc.poId === job.poId);
+
+      if (!jobCard) {
+        errors.push("Job Card is required and must exist.");
+      } else {
+        if (jobCard.companyId !== companyId) {
+          errors.push("Job Card does not belong to the current company.");
+        }
+        if (jobCard.status === 'Cancelled') {
+          errors.push("Job Card is Cancelled.");
+        }
+        if (jobCard.status === 'Completed') {
+          errors.push("Job Card is Completed.");
+        }
+      }
+
+      // 3. Assigned Machine required before printing starts
+      if (!job.assignedMachineId || job.assignedMachineId === 'unassigned' || job.assignedMachineId === '') {
+        errors.push("Machine has not been assigned.");
+      }
+
+      // 4. Job is eligible for printing stage
+      const eligibleStages: string[] = ['Planning', 'Paper Issued', 'Plate Ready', 'Ready for Printing', 'Machine Queue'];
+      if (!eligibleStages.includes((job.status || 'Planning') as string)) {
+        errors.push("Printing cannot start from the current stage.");
+      }
+
+      // 5. Paper must be issued before Printing Started
       const paperSlips = await PaperIssueApiService.getSlipsForJobItem(job.poId, job.id);
-      const totalIssuedSheets = paperSlips.reduce((sum, s) => sum + s.currentIssueQuantity, 0);
-      const isPaperIssued = paperSlips.some(s => s.status === 'Fully Issued') || totalIssuedSheets >= job.planning.requiredParentSheets;
-      
-      if (!isPaperIssued && paperSlips.length === 0) {
-        errors.push("Paper must be issued (create and authorize a Paper Issue Slip) before Printing Started.");
+      const totalIssuedSheets = paperSlips
+        .filter(s => s.status === 'Fully Issued' || s.status === 'Partially Issued')
+        .reduce((sum, s) => sum + s.currentIssueQuantity, 0);
+      const requiredSheets = job.planning.requiredParentSheets || 0;
+
+      if (totalIssuedSheets < requiredSheets) {
+        errors.push("Required paper has not been fully issued.");
       }
 
-      // 3. Plate must be ready before Printing Started
-      const plateSlips = await PlateIssueApiService.getSlipsForJobItem(job.poId, job.id);
-      const totalIssuedPlates = plateSlips.reduce((sum, s) => sum + s.currentIssueQuantity, 0);
-      const isPlateReady = plateSlips.some(s => s.status === 'Fully Issued') || totalIssuedPlates >= job.planning.plateQty;
+      // 6. Plate must be ready before Printing Started (when required)
+      const requiresPlate = (job.planning?.plateQty || 0) > 0;
+      if (requiresPlate) {
+        const plateSlips = await PlateIssueApiService.getSlipsForJobItem(job.poId, job.id);
+        const totalIssuedPlates = plateSlips
+          .filter(s => s.status === 'Fully Issued' || s.status === 'Partially Issued')
+          .reduce((sum, s) => sum + s.currentIssueQuantity, 0);
+        const requiredPlates = job.planning.plateQty || 0;
 
-      if (!isPlateReady && plateSlips.length === 0) {
-        errors.push("Plate must be ready (create and authorize a Plate Issue Slip) before Printing Started.");
+        if (totalIssuedPlates < requiredPlates) {
+          errors.push("Required plates are not ready.");
+        }
+      }
+    }
+
+    // Rules for completing printing
+    if (nextStage === 'Printing Completed') {
+      const goodSheets = (updates as any)?.goodSheets !== undefined ? (updates as any).goodSheets : 0;
+      const wasteSheets = (updates as any)?.wasteSheets !== undefined ? (updates as any).wasteSheets : 0;
+      const actualSheets = (updates as any)?.actualSheets !== undefined ? (updates as any).actualSheets : (goodSheets + wasteSheets);
+
+      // 1. User permission check: MUST be SUPER_ADMIN, COMPANY_ADMIN, or PRINTER
+      if (!currentUser || !['SUPER_ADMIN', 'COMPANY_ADMIN', 'PRINTER'].includes(currentUser.role)) {
+        errors.push("User does not have permission to perform this action.");
+      }
+
+      // 2. Printing has started (current status must be 'Printing Started' or 'On Hold')
+      if (job.status !== 'Printing Started' && job.status !== 'On Hold') {
+        errors.push("Printing has not started.");
+      }
+
+      // 3. Machine must be assigned
+      if (!job.assignedMachineId || job.assignedMachineId === 'unassigned' || job.assignedMachineId === '') {
+        errors.push("Machine has not been assigned.");
+      }
+
+      // 4. Quantities validations
+      if (goodSheets < 0) {
+        errors.push("Good sheets must be greater than or equal to 0.");
+      }
+      if (wasteSheets < 0) {
+        errors.push("Waste sheets must be greater than or equal to 0.");
+      }
+      if (actualSheets < 0) {
+        errors.push("Actual sheets must be greater than or equal to 0.");
+      }
+      if (actualSheets < goodSheets) {
+        errors.push("Actual sheets must be greater than or equal to good sheets.");
+      }
+      if (goodSheets + wasteSheets !== actualSheets) {
+        errors.push("Quantities are logically inconsistent (Actual Sheets must equal Good Sheets + Waste Sheets).");
       }
     }
 

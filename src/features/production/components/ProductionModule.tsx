@@ -15,6 +15,7 @@ import PlateIssueList from './PlateIssueList';
 import PlateIssueForm from './PlateIssueForm';
 import PlateIssueDetails from './PlateIssueDetails';
 import ProductionDashboard from './ProductionDashboard';
+import ProductionExecutionDashboard from './ProductionExecutionDashboard';
 import MachineQueueBoard from './MachineQueueBoard';
 import JobProductionDetails from './JobProductionDetails';
 import QCInspectionList from './QCInspectionList';
@@ -36,9 +37,10 @@ import DeliveryChallanDetails from './DeliveryChallanDetails';
 
 interface ProductionModuleProps {
   initialPI?: ProformaInvoice | null;
+  initialActiveTab?: number;
 }
 
-export default function ProductionModule({ initialPI }: ProductionModuleProps) {
+export default function ProductionModule({ initialPI, initialActiveTab }: ProductionModuleProps) {
   const [view, setView] = useState<
     | 'list'
     | 'create'
@@ -58,7 +60,13 @@ export default function ProductionModule({ initialPI }: ProductionModuleProps) {
     | 'create_chal'
     | 'details_chal'
   >('list');
-  const [tabIndex, setTabIndex] = useState(0); // 0=Dashboard, 1=Queue, 2=Orders, 3=Paper, 4=Plate, 5=QC, 6=Rework, 7=Dispatch, 8=Delivery Challan
+  const [tabIndex, setTabIndex] = useState(() => initialActiveTab ?? 0); // 0=Dashboard, 1=Execution, 2=Queue, 3=Orders, 4=Paper, 5=Plate, 6=QC, 7=Rework, 8=Dispatch, 9=Delivery Challan
+
+  useEffect(() => {
+    if (initialActiveTab !== undefined) {
+      setTabIndex(initialActiveTab);
+    }
+  }, [initialActiveTab]);
   const [orders, setOrders] = useState<ProductionOrder[]>([]);
   const [currentOrder, setCurrentOrder] = useState<ProductionOrder | null>(null);
   const [currentPIS, setCurrentPIS] = useState<PaperIssueSlip | null>(null);
@@ -162,7 +170,7 @@ export default function ProductionModule({ initialPI }: ProductionModuleProps) {
   const handleSave = () => {
     loadOrders();
     setView('list');
-    setTabIndex(2);
+    setTabIndex(3);
   };
 
   const handleCancel = () => {
@@ -203,14 +211,14 @@ export default function ProductionModule({ initialPI }: ProductionModuleProps) {
     setPreselectedPOId(undefined);
     setPreselectedJobItemId(undefined);
     setView('list');
-    setTabIndex(3); // Auto switch to Paper Issue Slips tab
+    setTabIndex(4); // Auto switch to Paper Issue Slips tab
   };
 
   const handleCancelPIS = () => {
     setPreselectedPOId(undefined);
     setPreselectedJobItemId(undefined);
     setView('list');
-    setTabIndex(3);
+    setTabIndex(4);
   };
 
   // Plate Issue Slip Handlers
@@ -247,14 +255,14 @@ export default function ProductionModule({ initialPI }: ProductionModuleProps) {
     setPreselectedPOId(undefined);
     setPreselectedJobItemId(undefined);
     setView('list');
-    setTabIndex(4); // Auto switch to Plate Issue Slips tab
+    setTabIndex(5); // Auto switch to Plate Issue Slips tab
   };
 
   const handleCancelPLS = () => {
     setPreselectedPOId(undefined);
     setPreselectedJobItemId(undefined);
     setView('list');
-    setTabIndex(4);
+    setTabIndex(5);
   };
 
   return (
@@ -306,6 +314,7 @@ export default function ProductionModule({ initialPI }: ProductionModuleProps) {
                       indicatorColor="primary"
                     >
                       <Tab label="Production Dashboard" sx={{ fontWeight: 'bold' }} />
+                      <Tab label="Production Execution" sx={{ fontWeight: 'bold' }} />
                       <Tab label="Machine Queue Board" sx={{ fontWeight: 'bold' }} />
                       <Tab label="Production Orders" sx={{ fontWeight: 'bold' }} />
                       <Tab label="Paper Issue Slips" sx={{ fontWeight: 'bold' }} />
@@ -322,15 +331,19 @@ export default function ProductionModule({ initialPI }: ProductionModuleProps) {
                 {view === 'list' && tabIndex === 0 && (
                   <ProductionDashboard 
                     onSelectJob={(job) => setSelectedJob(job)} 
-                    onSwitchTab={(index) => setTabIndex(index)} 
+                    onSwitchTab={(index) => setTabIndex(index === 0 ? 0 : index + 1)} 
                   />
                 )}
 
                 {view === 'list' && tabIndex === 1 && (
-                  <MachineQueueBoard onSelectJob={(job) => setSelectedJob(job)} />
+                  <ProductionExecutionDashboard />
                 )}
 
                 {view === 'list' && tabIndex === 2 && (
+                  <MachineQueueBoard onSelectJob={(job) => setSelectedJob(job)} />
+                )}
+
+                {view === 'list' && tabIndex === 3 && (
                   <ProductionOrderList
                     orders={orders}
                     onAdd={handleAdd}
@@ -340,7 +353,7 @@ export default function ProductionModule({ initialPI }: ProductionModuleProps) {
                   />
                 )}
 
-                {view === 'list' && tabIndex === 3 && (
+                {view === 'list' && tabIndex === 4 && (
                   <PaperIssueList
                     onAdd={handleAddPIS}
                     onEdit={handleEditPIS}
@@ -349,7 +362,7 @@ export default function ProductionModule({ initialPI }: ProductionModuleProps) {
                   />
                 )}
 
-                {view === 'list' && tabIndex === 4 && (
+                {view === 'list' && tabIndex === 5 && (
                   <PlateIssueList
                     onAdd={handleAddPLS}
                     onEdit={handleEditPLS}
@@ -358,7 +371,7 @@ export default function ProductionModule({ initialPI }: ProductionModuleProps) {
                   />
                 )}
 
-                {view === 'list' && tabIndex === 5 && (
+                {view === 'list' && tabIndex === 6 && (
                   <QCInspectionList
                     onAdd={() => {
                       setPreselectedJobForQC(null);
@@ -375,7 +388,7 @@ export default function ProductionModule({ initialPI }: ProductionModuleProps) {
                   />
                 )}
 
-                {view === 'list' && tabIndex === 6 && (
+                {view === 'list' && tabIndex === 7 && (
                   <ReworkTaskList
                     onAdd={() => {
                       setPreselectedJobForRework(null);
@@ -388,7 +401,7 @@ export default function ProductionModule({ initialPI }: ProductionModuleProps) {
                   />
                 )}
 
-                {view === 'list' && tabIndex === 7 && (
+                {view === 'list' && tabIndex === 8 && (
                   <DispatchList
                     onAdd={() => {
                       setPreselectedJobForDisp(null);
@@ -401,7 +414,7 @@ export default function ProductionModule({ initialPI }: ProductionModuleProps) {
                   />
                 )}
 
-                {view === 'list' && tabIndex === 8 && (
+                {view === 'list' && tabIndex === 9 && (
                   <DeliveryChallanList
                     onAdd={() => {
                       setView('create_chal');
@@ -477,13 +490,13 @@ export default function ProductionModule({ initialPI }: ProductionModuleProps) {
                     onSave={() => {
                       setPreselectedJobForQC(null);
                       setView('list');
-                      setTabIndex(5);
+                      setTabIndex(6);
                       loadOrders();
                     }}
                     onCancel={() => {
                       setPreselectedJobForQC(null);
                       setView('list');
-                      setTabIndex(5);
+                      setTabIndex(6);
                     }}
                   />
                 )}
@@ -495,7 +508,7 @@ export default function ProductionModule({ initialPI }: ProductionModuleProps) {
                     onBack={() => {
                       setCurrentQC(null);
                       setView('list');
-                      setTabIndex(5);
+                      setTabIndex(6);
                     }}
                   />
                 )}
@@ -507,13 +520,13 @@ export default function ProductionModule({ initialPI }: ProductionModuleProps) {
                     onSave={() => {
                       setPreselectedJobForRework(null);
                       setView('list');
-                      setTabIndex(6);
+                      setTabIndex(7);
                       loadOrders();
                     }}
                     onCancel={() => {
                       setPreselectedJobForRework(null);
                       setView('list');
-                      setTabIndex(6);
+                      setTabIndex(7);
                     }}
                   />
                 )}
@@ -525,12 +538,12 @@ export default function ProductionModule({ initialPI }: ProductionModuleProps) {
                     onBack={() => {
                       setCurrentRework(null);
                       setView('list');
-                      setTabIndex(6);
+                      setTabIndex(7);
                     }}
                     onSave={() => {
                       setCurrentRework(null);
                       setView('list');
-                      setTabIndex(6);
+                      setTabIndex(7);
                       loadOrders();
                     }}
                   />
@@ -543,13 +556,13 @@ export default function ProductionModule({ initialPI }: ProductionModuleProps) {
                     onSave={() => {
                       setPreselectedJobForDisp(null);
                       setView('list');
-                      setTabIndex(7);
+                      setTabIndex(8);
                       loadOrders();
                     }}
                     onCancel={() => {
                       setPreselectedJobForDisp(null);
                       setView('list');
-                      setTabIndex(7);
+                      setTabIndex(8);
                     }}
                   />
                 )}
@@ -561,7 +574,7 @@ export default function ProductionModule({ initialPI }: ProductionModuleProps) {
                     onBack={() => {
                       setCurrentDisp(null);
                       setView('list');
-                      setTabIndex(7);
+                      setTabIndex(8);
                     }}
                   />
                 )}
@@ -571,12 +584,12 @@ export default function ProductionModule({ initialPI }: ProductionModuleProps) {
                   <DeliveryChallanForm
                     onSave={() => {
                       setView('list');
-                      setTabIndex(8);
+                      setTabIndex(9);
                       loadOrders();
                     }}
                     onCancel={() => {
                       setView('list');
-                      setTabIndex(8);
+                      setTabIndex(9);
                     }}
                   />
                 )}
@@ -588,7 +601,7 @@ export default function ProductionModule({ initialPI }: ProductionModuleProps) {
                     onBack={() => {
                       setCurrentChal(null);
                       setView('list');
-                      setTabIndex(8);
+                      setTabIndex(9);
                     }}
                     onSave={() => {
                       loadOrders();

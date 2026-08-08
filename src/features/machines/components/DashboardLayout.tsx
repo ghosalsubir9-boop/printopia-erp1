@@ -252,6 +252,8 @@ export default function DashboardLayout({ children, activeModule = 'machines', o
     { text: 'Estimate', icon: <CalcIcon />, active: activeModule === 'estimates', id: 'estimates' },
     { text: 'Job Card', icon: <ReceiptIcon />, active: activeModule === 'job-cards', id: 'job-cards' as any },
     { text: 'Production', icon: <BuildIcon />, active: activeModule === 'production', id: 'production' as any },
+    { text: 'Production Execution', icon: <LayersIcon />, active: activeModule === 'production-execution', id: 'production-execution' as any },
+    { text: 'Machine Queue', icon: <SyncIcon />, active: activeModule === 'production-machine-queue', id: 'production-machine-queue' as any },
     { text: 'Inventory', icon: <InventoryIcon />, active: activeModule === 'inventory', id: 'inventory' as any }
   ];
 

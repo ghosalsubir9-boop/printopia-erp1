@@ -99,7 +99,39 @@ export class PlateIssueApiService {
     await delay(300);
     const companyId = AuthService.requireCurrentCompanyId();
     const currentUser = AuthService.getCurrentUser();
+    
+    // 1. Role guard
+    if (!currentUser || !['COMPANY_ADMIN', 'SUPER_ADMIN'].includes(currentUser.role)) {
+      throw new Error('Unauthorized: Only COMPANY_ADMIN or SUPER_ADMIN can issue plates.');
+    }
+
+    // 2. Remove fake customer fallback
+    if (!slip.customerId || slip.customerId.trim() === '' || slip.customerId === 'CUST-001') {
+      throw new Error('A valid customer identifier is required. Fake customer fallbacks are not permitted.');
+    }
+
     const list = this.getStoredSlips();
+
+    // 3. Over-issue validation
+    const previouslyIssued = list
+      .filter(s => s.companyId === companyId && s.poId === slip.poId && s.jobItemId === slip.jobItemId && s.status !== 'Cancelled' && s.status !== 'Draft')
+      .reduce((sum, s) => sum + s.currentIssueQuantity, 0);
+
+    const remaining = slip.requiredPlateQuantity - previouslyIssued;
+
+    if (slip.status !== 'Draft' && slip.currentIssueQuantity > remaining) {
+      const hasOverride = slip.remarks?.toLowerCase().includes('override') || slip.remarks?.toLowerCase().includes('authorized');
+      if (!hasOverride) {
+        throw new Error(`Only ${remaining} plates remain to be issued.`);
+      }
+    }
+
+    // 4. Status determination (Partial vs Full)
+    let finalStatus = slip.status;
+    if (slip.status !== 'Draft' && slip.status !== 'Cancelled') {
+      const totalIssued = previouslyIssued + slip.currentIssueQuantity;
+      finalStatus = totalIssued >= slip.requiredPlateQuantity ? 'Fully Issued' : 'Partially Issued';
+    }
 
     // Generate PLS Number: PLS-YYYY-NNNN
     const currentYear = new Date().getFullYear();
@@ -122,6 +154,7 @@ export class PlateIssueApiService {
       ...slip,
       companyId,
       issuedBy: currentUser?.userName || slip.issuedBy || 'System',
+      status: finalStatus,
       id,
       issueNumber,
       createdAt: timestamp,
@@ -135,17 +168,53 @@ export class PlateIssueApiService {
 
   public static async updateSlip(id: string, updatedFields: Partial<PlateIssueSlip>): Promise<PlateIssueSlip> {
     await delay(300);
+    const currentUser = AuthService.getCurrentUser();
+    
+    // 1. Role guard
+    if (!currentUser || !['COMPANY_ADMIN', 'SUPER_ADMIN'].includes(currentUser.role)) {
+      throw new Error('Unauthorized: Only COMPANY_ADMIN or SUPER_ADMIN can edit plate issue slips.');
+    }
+
     const list = this.getStoredSlips();
     const index = list.findIndex(item => item.id === id);
 
     if (index === -1) throw new Error(`Plate Issue Slip with ID '${id}' not found.`);
 
     const existing = list[index];
-    AuthService.assertTenantAccess(existing.companyId, AuthService.getCurrentUser());
+    AuthService.assertTenantAccess(existing.companyId, currentUser);
+
+    const merged = { ...existing, ...updatedFields };
+
+    // 2. Remove fake customer fallback
+    if (!merged.customerId || merged.customerId.trim() === '' || merged.customerId === 'CUST-001') {
+      throw new Error('A valid customer identifier is required. Fake customer fallbacks are not permitted.');
+    }
+
+    // 3. Over-issue validation
+    const previouslyIssued = list
+      .filter(s => s.id !== id && s.companyId === existing.companyId && s.poId === merged.poId && s.jobItemId === merged.jobItemId && s.status !== 'Cancelled' && s.status !== 'Draft')
+      .reduce((sum, s) => sum + s.currentIssueQuantity, 0);
+
+    const remaining = merged.requiredPlateQuantity - previouslyIssued;
+
+    if (merged.status !== 'Draft' && merged.currentIssueQuantity > remaining) {
+      const hasOverride = merged.remarks?.toLowerCase().includes('override') || merged.remarks?.toLowerCase().includes('authorized');
+      if (!hasOverride) {
+        throw new Error(`Only ${remaining} plates remain to be issued.`);
+      }
+    }
+
+    // 4. Status determination (Partial vs Full)
+    let finalStatus = merged.status;
+    if (merged.status !== 'Draft' && merged.status !== 'Cancelled') {
+      const totalIssued = previouslyIssued + merged.currentIssueQuantity;
+      finalStatus = totalIssued >= merged.requiredPlateQuantity ? 'Fully Issued' : 'Partially Issued';
+    }
 
     const updatedSlip = {
       ...existing,
       ...updatedFields,
+      status: finalStatus,
       id: existing.id,
       companyId: existing.companyId, // Protect tenant identity
       updatedAt: new Date().toISOString()
