@@ -56,7 +56,7 @@ export class MachineApiService {
     let machines = this.getStoredMachines();
     const currentCompanyId = AuthService.getCurrentCompanyId();
 
-    machines = machines.filter((m) => !m.companyId || m.companyId === currentCompanyId);
+    machines = machines.filter((m) => m.companyId === currentCompanyId);
 
     if (filters) {
       const { searchTerm, machineType, status, printingMethod } = filters;
@@ -93,7 +93,10 @@ export class MachineApiService {
   public static async getMachineById(id: string): Promise<MachineMasterItem | null> {
     await delay(150);
     const machines = this.getStoredMachines();
-    return machines.find((m) => m.id === id) || null;
+    const machine = machines.find((m) => m.id === id);
+    if (!machine) return null;
+    AuthService.assertTenantAccess(machine.companyId, AuthService.getCurrentUser());
+    return machine;
   }
 
   /**
@@ -141,6 +144,9 @@ export class MachineApiService {
       throw new Error(`Machine with ID '${id}' not found in the registry.`);
     }
 
+    const existing = machines[index];
+    AuthService.assertTenantAccess(existing.companyId, AuthService.getCurrentUser());
+
     // Server-side code unique validation check
     if (updatedFields.machineCode) {
       const codeExists = machines.some(
@@ -170,12 +176,13 @@ export class MachineApiService {
   public static async deleteMachine(id: string): Promise<boolean> {
     await delay(300);
     const machines = this.getStoredMachines();
-    const initialLength = machines.length;
-
-    const updated = machines.filter((m) => m.id !== id);
-    if (updated.length === initialLength) {
+    const existing = machines.find((m) => m.id === id);
+    if (!existing) {
       throw new Error(`Machine with ID '${id}' not found.`);
     }
+    AuthService.assertTenantAccess(existing.companyId, AuthService.getCurrentUser());
+
+    const updated = machines.filter((m) => m.id !== id);
 
     this.saveMachinesToStorage(updated);
     return true;

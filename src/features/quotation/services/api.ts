@@ -16,18 +16,25 @@ export class QuotationApiService {
   static async getQuotations(): Promise<QuotationHeader[]> {
     const list = this.getStoredQuotations();
     const currentCompanyId = AuthService.getCurrentCompanyId();
-    return list.filter((q) => !q.companyId || q.companyId === currentCompanyId);
+    return list.filter((q) => q.companyId === currentCompanyId);
   }
 
   static async getQuotationById(id: string): Promise<QuotationHeader | null> {
     const quotations = this.getStoredQuotations();
-    return quotations.find(q => q.id === id) || null;
+    const q = quotations.find(item => item.id === id);
+    if (!q) return null;
+    AuthService.assertTenantAccess(q.companyId, AuthService.getCurrentUser());
+    return q;
   }
 
   static async saveQuotation(quotation: QuotationHeader): Promise<QuotationHeader> {
     const quotations = this.getStoredQuotations();
     const currentCompanyId = AuthService.getCurrentCompanyId();
     const index = quotations.findIndex(q => q.id === quotation.id);
+
+    if (index >= 0) {
+      AuthService.assertTenantAccess(quotations[index].companyId, AuthService.getCurrentUser());
+    }
 
     const companyId = quotation.companyId || currentCompanyId;
     const preparedQuotation: QuotationHeader = {
@@ -51,16 +58,37 @@ export class QuotationApiService {
 
   static async deleteQuotation(id: string): Promise<void> {
     const quotations = this.getStoredQuotations();
+    const target = quotations.find(q => q.id === id);
+    if (target) {
+      AuthService.assertTenantAccess(target.companyId, AuthService.getCurrentUser());
+    }
     this.setStoredQuotations(quotations.filter(q => q.id !== id));
   }
 
   static generateQuotationNumber(): string {
     const quotations = this.getStoredQuotations();
     const currentCompanyId = AuthService.getCurrentCompanyId();
-    const tenantQuotations = quotations.filter((q) => !q.companyId || q.companyId === currentCompanyId);
-    const year = new Date().getFullYear();
-    const count = tenantQuotations.length + 1;
-    return `QT-${year}-${count.toString().padStart(4, '0')}`;
+    const tenantQuotations = quotations.filter((q) => q.companyId === currentCompanyId);
+    
+    const d = new Date();
+    const startYear = d.getMonth() >= 3 ? d.getFullYear() : d.getFullYear() - 1;
+    const endYearStr = String((startYear + 1) % 100).padStart(2, '0');
+    const finYear = `${startYear}-${endYearStr}`;
+    const prefix = `QT/${finYear}/`;
+
+    let maxSeq = 0;
+    tenantQuotations.forEach((q) => {
+      if (q.quotationNumber && q.quotationNumber.startsWith(prefix)) {
+        const parts = q.quotationNumber.split('/');
+        if (parts.length === 3) {
+          const seq = parseInt(parts[2], 10);
+          if (!isNaN(seq) && seq > maxSeq) maxSeq = seq;
+        }
+      }
+    });
+
+    const nextSeq = maxSeq > 0 ? maxSeq + 1 : tenantQuotations.length + 1;
+    return `${prefix}${nextSeq.toString().padStart(4, '0')}`;
   }
 
   static async createRevision(originalId: string, reason: string, revisedBy: string): Promise<QuotationHeader> {

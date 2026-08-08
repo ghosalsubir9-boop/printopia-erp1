@@ -33,8 +33,11 @@ export class AutoPostingEngine {
   public static postTransaction(req: PostRequest): string {
     // Check Permissions (assuming Accounts or Admin role needed for Auto Posting)
     const currentUser = AuthService.getCurrentUser();
-    if (currentUser && currentUser.role !== 'Admin' && currentUser.role !== 'Accounts') {
-      throw new Error("You do not have permission to post accounting entries.");
+    if (currentUser) {
+      const canPost = ['SUPER_ADMIN', 'COMPANY_ADMIN', 'Admin', 'ACCOUNTS', 'Accounts'].includes(currentUser.role);
+      if (!canPost) {
+        throw new Error("You do not have permission to post accounting entries.");
+      }
     }
 
     // 1. Duplicate check

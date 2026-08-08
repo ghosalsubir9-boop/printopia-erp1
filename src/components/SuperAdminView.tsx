@@ -308,7 +308,7 @@ export default function SuperAdminView() {
 
       {/* Metric Cards */}
       <Grid container spacing={2.5} sx={{ mb: 3 }}>
-        <Grid item xs={12} sm={6} md={3}>
+        <Grid size={{ xs: 12, sm: 6, md: 3 }}>
           <Card variant="outlined" sx={{ borderRadius: 3, bgcolor: '#f8fafc' }}>
             <CardContent>
               <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 'bold' }}>
@@ -321,7 +321,7 @@ export default function SuperAdminView() {
           </Card>
         </Grid>
 
-        <Grid item xs={12} sm={6} md={3}>
+        <Grid size={{ xs: 12, sm: 6, md: 3 }}>
           <Card variant="outlined" sx={{ borderRadius: 3, bgcolor: '#f8fafc' }}>
             <CardContent>
               <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 'bold' }}>
@@ -334,7 +334,7 @@ export default function SuperAdminView() {
           </Card>
         </Grid>
 
-        <Grid item xs={12} sm={6} md={3}>
+        <Grid size={{ xs: 12, sm: 6, md: 3 }}>
           <Card variant="outlined" sx={{ borderRadius: 3, bgcolor: '#f8fafc' }}>
             <CardContent>
               <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 'bold' }}>
@@ -347,7 +347,7 @@ export default function SuperAdminView() {
           </Card>
         </Grid>
 
-        <Grid item xs={12} sm={6} md={3}>
+        <Grid size={{ xs: 12, sm: 6, md: 3 }}>
           <Card variant="outlined" sx={{ borderRadius: 3, bgcolor: '#f8fafc' }}>
             <CardContent>
               <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 'bold' }}>
@@ -484,7 +484,7 @@ export default function SuperAdminView() {
                         </TableCell>
 
                         <TableCell align="right">
-                          <Stack direction="row" spacing={1} justifyContent="flex-end">
+                          <Stack direction="row" spacing={1} sx={{ justifyContent: 'flex-end' }}>
                             <Tooltip title="Enter Support Mode (Inspect Tenant)">
                               <IconButton
                                 size="small"
@@ -498,7 +498,7 @@ export default function SuperAdminView() {
                             <Tooltip title="Edit Company Details">
                               <IconButton
                                 size="small"
-                                color="action"
+                                color="default"
                                 onClick={() => handleOpenEditCompany(company)}
                               >
                                 <EditIcon />
@@ -617,7 +617,7 @@ export default function SuperAdminView() {
 
           <DialogContent dividers sx={{ p: 3 }}>
             <Grid container spacing={2.5}>
-              <Grid item xs={12} sm={4}>
+              <Grid size={{ xs: 12, sm: 4 }}>
                 <TextField
                   required
                   fullWidth
@@ -628,7 +628,7 @@ export default function SuperAdminView() {
                 />
               </Grid>
 
-              <Grid item xs={12} sm={8}>
+              <Grid size={{ xs: 12, sm: 8 }}>
                 <TextField
                   required
                   fullWidth
@@ -638,7 +638,7 @@ export default function SuperAdminView() {
                 />
               </Grid>
 
-              <Grid item xs={12} sm={6}>
+              <Grid size={{ xs: 12, sm: 6 }}>
                 <TextField
                   fullWidth
                   label="Legal Entity Name"
@@ -648,7 +648,7 @@ export default function SuperAdminView() {
                 />
               </Grid>
 
-              <Grid item xs={12} sm={6}>
+              <Grid size={{ xs: 12, sm: 6 }}>
                 <TextField
                   required
                   fullWidth
@@ -659,7 +659,7 @@ export default function SuperAdminView() {
                 />
               </Grid>
 
-              <Grid item xs={12} sm={6}>
+              <Grid size={{ xs: 12, sm: 6 }}>
                 <TextField
                   required
                   fullWidth
@@ -670,7 +670,7 @@ export default function SuperAdminView() {
                 />
               </Grid>
 
-              <Grid item xs={12} sm={6}>
+              <Grid size={{ xs: 12, sm: 6 }}>
                 <TextField
                   required
                   fullWidth
@@ -680,7 +680,7 @@ export default function SuperAdminView() {
                 />
               </Grid>
 
-              <Grid item xs={12}>
+              <Grid size={12}>
                 <TextField
                   required
                   fullWidth
@@ -692,7 +692,7 @@ export default function SuperAdminView() {
                 />
               </Grid>
 
-              <Grid item xs={12} sm={4}>
+              <Grid size={{ xs: 12, sm: 4 }}>
                 <TextField
                   required
                   fullWidth
@@ -702,7 +702,7 @@ export default function SuperAdminView() {
                 />
               </Grid>
 
-              <Grid item xs={12} sm={4}>
+              <Grid size={{ xs: 12, sm: 4 }}>
                 <TextField
                   required
                   fullWidth
@@ -712,7 +712,7 @@ export default function SuperAdminView() {
                 />
               </Grid>
 
-              <Grid item xs={12} sm={4}>
+              <Grid size={{ xs: 12, sm: 4 }}>
                 <TextField
                   required
                   fullWidth
@@ -722,7 +722,7 @@ export default function SuperAdminView() {
                 />
               </Grid>
 
-              <Grid item xs={12} sm={4}>
+              <Grid size={{ xs: 12, sm: 4 }}>
                 <TextField
                   select
                   fullWidth
@@ -737,7 +737,7 @@ export default function SuperAdminView() {
                 </TextField>
               </Grid>
 
-              <Grid item xs={12} sm={4}>
+              <Grid size={{ xs: 12, sm: 4 }}>
                 <TextField
                   type="date"
                   fullWidth
@@ -748,7 +748,7 @@ export default function SuperAdminView() {
                 />
               </Grid>
 
-              <Grid item xs={12} sm={4}>
+              <Grid size={{ xs: 12, sm: 4 }}>
                 <TextField
                   type="date"
                   fullWidth
@@ -761,13 +761,13 @@ export default function SuperAdminView() {
 
               {!editingCompany && (
                 <>
-                  <Grid item xs={12}>
+                  <Grid size={12}>
                     <Divider sx={{ my: 1 }}>
                       <Chip label="Initial Company Admin Account" size="small" />
                     </Divider>
                   </Grid>
 
-                  <Grid item xs={12} sm={4}>
+                  <Grid size={{ xs: 12, sm: 4 }}>
                     <TextField
                       required
                       fullWidth
@@ -777,7 +777,7 @@ export default function SuperAdminView() {
                     />
                   </Grid>
 
-                  <Grid item xs={12} sm={4}>
+                  <Grid size={{ xs: 12, sm: 4 }}>
                     <TextField
                       required
                       fullWidth
@@ -788,7 +788,7 @@ export default function SuperAdminView() {
                     />
                   </Grid>
 
-                  <Grid item xs={12} sm={4}>
+                  <Grid size={{ xs: 12, sm: 4 }}>
                     <TextField
                       required
                       fullWidth

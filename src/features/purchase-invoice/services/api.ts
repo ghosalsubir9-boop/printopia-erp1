@@ -508,7 +508,8 @@ export class PurchaseInvoiceApiService {
     await delay(300);
     const user = AuthService.getCurrentUser();
     if (!user) throw new Error('Authentication required.');
-    if (user.role !== 'Admin') {
+    const isAdmin = ['SUPER_ADMIN', 'COMPANY_ADMIN', 'Admin'].includes(user.role);
+    if (!isAdmin) {
       throw new Error('Only authorized Admin users can approve matching overrides.');
     }
 
@@ -557,7 +558,8 @@ export class PurchaseInvoiceApiService {
     const user = AuthService.getCurrentUser();
     if (!user) throw new Error('Authentication required.');
 
-    if (user.role !== 'Admin' && user.role !== 'Accounts') {
+    const canReviewITC = ['SUPER_ADMIN', 'COMPANY_ADMIN', 'Admin', 'ACCOUNTS', 'Accounts'].includes(user.role);
+    if (!canReviewITC) {
       throw new Error('Only Accounts or Admin roles have permission to perform ITC reviews.');
     }
 
@@ -739,7 +741,8 @@ export class PurchaseInvoiceApiService {
     const user = AuthService.getCurrentUser();
     if (!user) throw new Error('Authentication required.');
 
-    if (user.role !== 'Admin' && user.role !== 'Accounts') {
+    const canPayVendor = ['SUPER_ADMIN', 'COMPANY_ADMIN', 'Admin', 'ACCOUNTS', 'Accounts'].includes(user.role);
+    if (!canPayVendor) {
       throw new Error('Only Accounts or Admin roles can record vendor payments.');
     }
 

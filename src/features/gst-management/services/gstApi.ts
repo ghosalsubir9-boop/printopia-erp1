@@ -122,7 +122,8 @@ export class GstApiService {
       if (period.status !== 'Ready to File') throw new Error('Period must be in Ready to File status before filing.');
       if (!filingData?.acknowledgementNumber) throw new Error('Acknowledgement/ARN is required for filing.');
       if (!filingData?.filedAt) throw new Error('Filing date is required.');
-      if (user.role !== 'Admin' && user.role !== 'Accounts') throw new Error('Only Admin or Accounts can mark a period as Filed.');
+      const canFile = ['SUPER_ADMIN', 'COMPANY_ADMIN', 'Admin', 'ACCOUNTS', 'Accounts'].includes(user.role);
+      if (!canFile) throw new Error('Only Admin or Accounts can mark a period as Filed.');
       
       const errors = await this.validatePeriodData(period);
       if (errors.some(e => e.type === 'Error')) throw new Error('Cannot file period with active Error-level validation issues.');
@@ -149,7 +150,8 @@ export class GstApiService {
   public static async unlockPeriod(id: string, reason: string): Promise<void> {
     const user = AuthService.getCurrentUser();
     if (!user) throw new Error('Authentication required.');
-    if (user.role !== 'Admin') throw new Error('Only Admin can unlock a period.');
+    const isAdmin = ['SUPER_ADMIN', 'COMPANY_ADMIN', 'Admin'].includes(user.role);
+    if (!isAdmin) throw new Error('Only Admin can unlock a period.');
     if (!reason || reason.trim().length < 5) throw new Error('A valid reason (min 5 chars) is mandatory for unlocking.');
 
     const periods = await this.getPeriods();

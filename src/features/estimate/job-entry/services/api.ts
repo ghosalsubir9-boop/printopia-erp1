@@ -128,7 +128,7 @@ export class EstimateApiService {
     let list = this.getStoredEstimates();
     const currentCompanyId = AuthService.getCurrentCompanyId();
 
-    list = list.filter((item) => !item.companyId || item.companyId === currentCompanyId);
+    list = list.filter((item) => item.companyId === currentCompanyId);
 
     if (filters) {
       const { searchTerm, customerId, priority } = filters;
@@ -164,7 +164,10 @@ export class EstimateApiService {
   public static async getEstimateById(id: string): Promise<EstimateJob | null> {
     await delay(150);
     const list = this.getStoredEstimates();
-    return list.find((item) => item.id === id) || null;
+    const item = list.find((i) => i.id === id);
+    if (!item) return null;
+    AuthService.assertTenantAccess(item.companyId, AuthService.getCurrentUser());
+    return item;
   }
 
   /**
@@ -176,32 +179,37 @@ export class EstimateApiService {
   ): Promise<EstimateJob> {
     await delay(400);
     const list = this.getStoredEstimates();
+    const currentCompanyId = AuthService.getCurrentCompanyId();
+    const companyId = job.companyId || currentCompanyId;
 
-    // Generate Estimate Code: EST-2026-XXXX
-    const currentYear = new Date().getFullYear();
-    const sameYearEstimates = list.filter((e) => e.estimateNumber.startsWith(`EST-${currentYear}-`));
-    
-    let nextSeq = 1;
-    if (sameYearEstimates.length > 0) {
-      // Find maximum sequence number
-      const seqs = sameYearEstimates.map((e) => {
-        const parts = e.estimateNumber.split('-');
-        return parseInt(parts[parts.length - 1], 10);
-      });
-      nextSeq = Math.max(...seqs) + 1;
-    }
-    
-    const paddedSeq = String(nextSeq).padStart(4, '0');
-    const estimateNumber = `EST-${currentYear}-${paddedSeq}`;
-    
+    // Financial Year calculations
+    const d = new Date();
+    const startYear = d.getMonth() >= 3 ? d.getFullYear() : d.getFullYear() - 1;
+    const endYearStr = String((startYear + 1) % 100).padStart(2, '0');
+    const finYear = `${startYear}-${endYearStr}`;
+    const prefix = `EST/${finYear}/`;
+
+    // Tenant-scoped sequence
+    const tenantEstimates = list.filter((e) => e.companyId === companyId);
+    let maxSeq = 0;
+    tenantEstimates.forEach((e) => {
+      if (e.estimateNumber && e.estimateNumber.startsWith(prefix)) {
+        const parts = e.estimateNumber.split('/');
+        if (parts.length === 3) {
+          const seq = parseInt(parts[2], 10);
+          if (!isNaN(seq) && seq > maxSeq) maxSeq = seq;
+        }
+      }
+    });
+
+    const estimateNumber = `${prefix}${String(maxSeq + 1).padStart(4, '0')}`;
     const id = `est-${Date.now()}`;
     const timestamp = new Date().toISOString();
-    const currentCompanyId = AuthService.getCurrentCompanyId();
 
     const newJob: EstimateJob = {
       ...job,
       id,
-      companyId: job.companyId || currentCompanyId,
+      companyId,
       estimateNumber,
       createdAt: timestamp,
       updatedAt: timestamp
@@ -229,6 +237,8 @@ export class EstimateApiService {
     }
 
     const current = list[index];
+    AuthService.assertTenantAccess(current.companyId, AuthService.getCurrentUser());
+
     const updatedJob: EstimateJob = {
       ...current,
       ...updatedFields,
@@ -247,11 +257,13 @@ export class EstimateApiService {
   public static async deleteEstimate(id: string): Promise<boolean> {
     await delay(250);
     const list = this.getStoredEstimates();
-    const filtered = list.filter((item) => item.id !== id);
-
-    if (filtered.length === list.length) {
+    const item = list.find((i) => i.id === id);
+    if (!item) {
       throw new Error(`Estimate with ID '${id}' not found.`);
     }
+    AuthService.assertTenantAccess(item.companyId, AuthService.getCurrentUser());
+
+    const filtered = list.filter((item) => item.id !== id);
 
     this.saveEstimates(filtered);
     return true;

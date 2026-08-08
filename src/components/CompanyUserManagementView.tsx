@@ -220,11 +220,11 @@ export default function CompanyUserManagementView() {
                 </TableCell>
 
                 <TableCell align="right">
-                  <Stack direction="row" spacing={1} justifyContent="flex-end">
+                  <Stack direction="row" spacing={1} sx={{ justifyContent: 'flex-end' }}>
                     <Tooltip title="Reset Password">
                       <IconButton
                         size="small"
-                        color="action"
+                        color="default"
                         onClick={() => {
                           setSelectedUser(u);
                           setNewPassword('');
@@ -267,7 +267,7 @@ export default function CompanyUserManagementView() {
 
           <DialogContent dividers sx={{ p: 3 }}>
             <Grid container spacing={2}>
-              <Grid item xs={12} sm={6}>
+              <Grid size={{ xs: 12, sm: 6 }}>
                 <TextField
                   required
                   fullWidth
@@ -277,7 +277,7 @@ export default function CompanyUserManagementView() {
                 />
               </Grid>
 
-              <Grid item xs={12} sm={6}>
+              <Grid size={{ xs: 12, sm: 6 }}>
                 <TextField
                   required
                   fullWidth
@@ -289,7 +289,7 @@ export default function CompanyUserManagementView() {
                 />
               </Grid>
 
-              <Grid item xs={12} sm={6}>
+              <Grid size={{ xs: 12, sm: 6 }}>
                 <TextField
                   required
                   fullWidth
@@ -299,7 +299,7 @@ export default function CompanyUserManagementView() {
                 />
               </Grid>
 
-              <Grid item xs={12} sm={6}>
+              <Grid size={{ xs: 12, sm: 6 }}>
                 <TextField
                   select
                   required
@@ -316,7 +316,7 @@ export default function CompanyUserManagementView() {
                 </TextField>
               </Grid>
 
-              <Grid item xs={12} sm={6}>
+              <Grid size={{ xs: 12, sm: 6 }}>
                 <TextField
                   fullWidth
                   label="Department"
@@ -326,7 +326,7 @@ export default function CompanyUserManagementView() {
               </Grid>
 
               {!editingUser && (
-                <Grid item xs={12} sm={6}>
+                <Grid size={{ xs: 12, sm: 6 }}>
                   <TextField
                     required
                     fullWidth

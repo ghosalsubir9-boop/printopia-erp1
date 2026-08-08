@@ -161,7 +161,7 @@ export default function CompanySettingsView() {
             <form onSubmit={handleSubmit}>
               <Grid container spacing={3}>
                 {/* General and Contact Information */}
-                <Grid item xs={12} md={7}>
+                <Grid size={{ xs: 12, md: 7 }}>
                   <Card variant="outlined" sx={{ mb: 3 }}>
                     <CardContent sx={{ p: 3 }}>
                       <Typography variant="subtitle1" sx={{ fontWeight: 'bold', mb: 2, display: 'flex', alignItems: 'center', gap: 1 }}>
@@ -170,7 +170,7 @@ export default function CompanySettingsView() {
                       <Divider sx={{ mb: 3 }} />
 
                       <Grid container spacing={2}>
-                        <Grid item xs={12}>
+                        <Grid size={12}>
                           <TextField
                             required
                             fullWidth
@@ -181,7 +181,7 @@ export default function CompanySettingsView() {
                           />
                         </Grid>
 
-                        <Grid item xs={12}>
+                        <Grid size={12}>
                           <TextField
                             fullWidth
                             label="Company Logo URL"
@@ -192,7 +192,7 @@ export default function CompanySettingsView() {
                           />
                         </Grid>
 
-                        <Grid item xs={12}>
+                        <Grid size={12}>
                           <TextField
                             required
                             fullWidth
@@ -205,7 +205,7 @@ export default function CompanySettingsView() {
                           />
                         </Grid>
 
-                        <Grid item xs={12} sm={6}>
+                        <Grid size={{ xs: 12, sm: 6 }}>
                           <TextField
                             required
                             fullWidth
@@ -222,7 +222,7 @@ export default function CompanySettingsView() {
                           </TextField>
                         </Grid>
 
-                        <Grid item xs={12} sm={6}>
+                        <Grid size={{ xs: 12, sm: 6 }}>
                           <TextField
                             required
                             fullWidth
@@ -245,7 +245,7 @@ export default function CompanySettingsView() {
                       <Divider sx={{ mb: 3 }} />
 
                       <Grid container spacing={2}>
-                        <Grid item xs={12} sm={6}>
+                        <Grid size={{ xs: 12, sm: 6 }}>
                           <TextField
                             required
                             fullWidth
@@ -256,7 +256,7 @@ export default function CompanySettingsView() {
                           />
                         </Grid>
 
-                        <Grid item xs={12} sm={6}>
+                        <Grid size={{ xs: 12, sm: 6 }}>
                           <TextField
                             required
                             fullWidth
@@ -272,7 +272,7 @@ export default function CompanySettingsView() {
                 </Grid>
 
                 {/* Legal, Signature, and Banking */}
-                <Grid item xs={12} md={5}>
+                <Grid size={{ xs: 12, md: 5 }}>
                   <Card variant="outlined" sx={{ mb: 3 }}>
                     <CardContent sx={{ p: 3 }}>
                       <Typography variant="subtitle1" sx={{ fontWeight: 'bold', mb: 2, display: 'flex', alignItems: 'center', gap: 1 }}>
@@ -281,7 +281,7 @@ export default function CompanySettingsView() {
                       <Divider sx={{ mb: 3 }} />
 
                       <Grid container spacing={2}>
-                        <Grid item xs={12}>
+                        <Grid size={12}>
                           <TextField
                             required
                             fullWidth
@@ -292,7 +292,7 @@ export default function CompanySettingsView() {
                           />
                         </Grid>
 
-                        <Grid item xs={12}>
+                        <Grid size={12}>
                           <TextField
                             required
                             fullWidth
@@ -304,7 +304,7 @@ export default function CompanySettingsView() {
                           />
                         </Grid>
 
-                        <Grid item xs={12}>
+                        <Grid size={12}>
                           <FormControlLabel
                             control={
                               <Checkbox
@@ -317,7 +317,7 @@ export default function CompanySettingsView() {
                           />
                         </Grid>
 
-                        <Grid item xs={12}>
+                        <Grid size={12}>
                           <TextField
                             required
                             fullWidth
@@ -345,7 +345,7 @@ export default function CompanySettingsView() {
                       <Divider sx={{ mb: 3 }} />
 
                       <Grid container spacing={2}>
-                        <Grid item xs={12}>
+                        <Grid size={12}>
                           <TextField
                             required
                             fullWidth
@@ -356,7 +356,7 @@ export default function CompanySettingsView() {
                           />
                         </Grid>
 
-                        <Grid item xs={12}>
+                        <Grid size={12}>
                           <TextField
                             required
                             fullWidth
@@ -367,7 +367,7 @@ export default function CompanySettingsView() {
                           />
                         </Grid>
 
-                        <Grid item xs={12}>
+                        <Grid size={12}>
                           <TextField
                             required
                             fullWidth
@@ -378,7 +378,7 @@ export default function CompanySettingsView() {
                           />
                         </Grid>
 
-                        <Grid item xs={12}>
+                        <Grid size={12}>
                           <TextField
                             required
                             fullWidth
@@ -393,7 +393,7 @@ export default function CompanySettingsView() {
                   </Card>
                 </Grid>
 
-                <Grid item xs={12}>
+                <Grid size={12}>
                   <Box sx={{ display: 'flex', justifyContent: 'flex-end', mt: 1, mb: 2 }}>
                     <Button
                       type="submit"

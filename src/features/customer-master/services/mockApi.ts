@@ -350,7 +350,17 @@ export class CustomerMasterService {
     const data = localStorage.getItem(STORAGE_CUSTOMERS);
     const list: CustomerMasterItem[] = data ? JSON.parse(data) : [];
     const currentCompanyId = AuthService.getCurrentCompanyId();
-    return list.filter((c) => c.companyId === currentCompanyId || !c.companyId);
+    return list.filter((c) => c.companyId === currentCompanyId);
+  }
+
+  static getCustomerById(id: string): CustomerMasterItem | null {
+    this.initStorage();
+    const data = localStorage.getItem(STORAGE_CUSTOMERS);
+    const list: CustomerMasterItem[] = data ? JSON.parse(data) : [];
+    const customer = list.find((c) => c.id === id);
+    if (!customer) return null;
+    AuthService.assertTenantAccess(customer.companyId, AuthService.getCurrentUser());
+    return customer;
   }
 
   // --- SAVE NEW CUSTOMER ---
@@ -363,7 +373,7 @@ export class CustomerMasterService {
     const currentCompanyId = AuthService.getCurrentCompanyId();
 
     // Generate consecutive CUST CODE
-    const tenantCustomers = allCustomers.filter((c) => c.companyId === currentCompanyId || !c.companyId);
+    const tenantCustomers = allCustomers.filter((c) => c.companyId === currentCompanyId);
     const nextSeq = tenantCustomers.length + 1;
     const paddedSeq = String(nextSeq).padStart(4, '0');
     const customerCode = `CUST-26-${paddedSeq}`;
@@ -434,6 +444,8 @@ export class CustomerMasterService {
     }
 
     const current = allCustomers[index];
+    AuthService.assertTenantAccess(current.companyId, AuthService.getCurrentUser());
+
     const timestamp = new Date().toISOString();
 
     const updatedCustomer: CustomerMasterItem = {
@@ -456,6 +468,10 @@ export class CustomerMasterService {
     this.initStorage();
     const rawData = localStorage.getItem(STORAGE_CUSTOMERS);
     let allCustomers: CustomerMasterItem[] = rawData ? JSON.parse(rawData) : [];
+    const target = allCustomers.find((c) => c.id === id);
+    if (target) {
+      AuthService.assertTenantAccess(target.companyId, AuthService.getCurrentUser());
+    }
     allCustomers = allCustomers.filter((c) => c.id !== id);
     localStorage.setItem(STORAGE_CUSTOMERS, JSON.stringify(allCustomers));
 

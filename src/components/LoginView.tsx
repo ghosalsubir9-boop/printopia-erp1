@@ -35,7 +35,7 @@ import {
   Palette as DesignIcon,
   Print as PrintIcon,
   AccountBalance as FinanceIcon,
-  SuperAdminIcon,
+  SupervisorAccount as SuperAdminIcon,
   CorporateFare as CompanyIcon
 } from '@mui/icons-material';
 import { AuthService, UserRole } from '../services/authService';

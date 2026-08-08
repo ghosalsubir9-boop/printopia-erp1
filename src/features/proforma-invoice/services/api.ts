@@ -19,12 +19,15 @@ export class PIApiService {
   static async getInvoices(): Promise<ProformaInvoice[]> {
     const list = this.getStoredInvoices();
     const currentCompanyId = AuthService.getCurrentCompanyId();
-    return list.filter((i) => !i.companyId || i.companyId === currentCompanyId);
+    return list.filter((i) => i.companyId === currentCompanyId);
   }
 
   static async getInvoiceById(id: string): Promise<ProformaInvoice | null> {
     const invoices = this.getStoredInvoices();
-    return invoices.find(i => i.id === id) || null;
+    const inv = invoices.find(i => i.id === id);
+    if (!inv) return null;
+    AuthService.assertTenantAccess(inv.companyId, AuthService.getCurrentUser());
+    return inv;
   }
 
   /**
@@ -133,7 +136,7 @@ export class PIApiService {
 
     // New Invoice Creation
     const now = new Date();
-    const tenantInvoices = invoices.filter(i => !i.companyId || i.companyId === companyId);
+    const tenantInvoices = invoices.filter(i => i.companyId === companyId);
     const piNumber = calculated.piNumber || PINumberingService.generateNextPINumber(tenantInvoices, calculated.date || now);
 
     const newInvoice: ProformaInvoice = {

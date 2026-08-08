@@ -414,9 +414,9 @@ export class ProductApiService {
     let products = this.getStored<ProductMasterItem>(KEYS.PRODUCTS, initialProducts);
     const currentCompanyId = AuthService.getCurrentCompanyId();
 
-    // Multi-tenant filter: global scope OR matching companyId OR legacy items without companyId
+    // Multi-tenant filter: global scope OR matching companyId
     products = products.filter(
-      (p) => p.scope === 'GLOBAL' || !p.companyId || p.companyId === currentCompanyId
+      (p) => p.scope === 'GLOBAL' || p.companyId === currentCompanyId
     );
 
     // Rule 5: Automatically assign/migrate product codes for existing products
@@ -488,7 +488,12 @@ export class ProductApiService {
   public static async getProductById(id: string): Promise<ProductMasterItem | null> {
     await delay(100);
     const products = this.getStored<ProductMasterItem>(KEYS.PRODUCTS, initialProducts);
-    return products.find((p) => p.id === id) || null;
+    const prod = products.find((p) => p.id === id);
+    if (!prod) return null;
+    if (prod.scope !== 'GLOBAL') {
+      AuthService.assertTenantAccess(prod.companyId, AuthService.getCurrentUser());
+    }
+    return prod;
   }
 
   public static async createProduct(
@@ -554,6 +559,11 @@ export class ProductApiService {
       throw new Error(`Product with ID '${id}' not found.`);
     }
 
+    const existing = products[index];
+    if (existing.scope !== 'GLOBAL') {
+      AuthService.assertTenantAccess(existing.companyId, AuthService.getCurrentUser());
+    }
+
     // Rule 4 & 7: Product Code is read-only after creation and cannot be edited.
     // Ensure we strip out any modifications to productCode to maintain read-only discipline.
     const { productCode, ...safeFields } = updatedFields;
@@ -573,13 +583,15 @@ export class ProductApiService {
   public static async deleteProduct(id: string): Promise<boolean> {
     await delay(300);
     const products = this.getStored<ProductMasterItem>(KEYS.PRODUCTS, initialProducts);
-    const initialLen = products.length;
-    const filtered = products.filter((p) => p.id !== id);
-
-    if (filtered.length === initialLen) {
+    const existing = products.find((p) => p.id === id);
+    if (!existing) {
       throw new Error(`Product with ID '${id}' not found.`);
     }
+    if (existing.scope !== 'GLOBAL') {
+      AuthService.assertTenantAccess(existing.companyId, AuthService.getCurrentUser());
+    }
 
+    const filtered = products.filter((p) => p.id !== id);
     this.saveStored(KEYS.PRODUCTS, filtered);
     return true;
   }

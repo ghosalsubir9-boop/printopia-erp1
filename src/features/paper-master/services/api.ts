@@ -489,7 +489,7 @@ export class PaperApiService {
 
     // Multi-tenant filter
     papers = papers.filter(
-      (p) => p.scope === 'GLOBAL' || !p.companyId || p.companyId === currentCompanyId
+      (p) => p.scope === 'GLOBAL' || p.companyId === currentCompanyId
     );
 
     if (filters) {
@@ -530,7 +530,12 @@ export class PaperApiService {
   public static async getPaperById(id: string): Promise<PaperMasterItem | null> {
     await delay(100);
     const papers = this.getStored<PaperMasterItem>(KEYS.PAPERS, initialPapers);
-    return papers.find((p) => p.id === id) || null;
+    const paper = papers.find((p) => p.id === id);
+    if (!paper) return null;
+    if (paper.scope !== 'GLOBAL') {
+      AuthService.assertTenantAccess(paper.companyId, AuthService.getCurrentUser());
+    }
+    return paper;
   }
 
   public static async createPaper(
@@ -641,6 +646,11 @@ export class PaperApiService {
       throw new Error(`Paper with ID '${id}' not found.`);
     }
 
+    const existing = papers[index];
+    if (existing.scope !== 'GLOBAL') {
+      AuthService.assertTenantAccess(existing.companyId, AuthService.getCurrentUser());
+    }
+
     // Code validation
     if (updatedFields.paperCode) {
       const codeExists = papers.some(
@@ -666,12 +676,15 @@ export class PaperApiService {
   public static async deletePaper(id: string): Promise<boolean> {
     await delay(300);
     const papers = this.getStored<PaperMasterItem>(KEYS.PAPERS, initialPapers);
-    const initialLen = papers.length;
-    const filtered = papers.filter((p) => p.id !== id);
-
-    if (filtered.length === initialLen) {
+    const existing = papers.find((p) => p.id === id);
+    if (!existing) {
       throw new Error(`Paper with ID '${id}' not found.`);
     }
+    if (existing.scope !== 'GLOBAL') {
+      AuthService.assertTenantAccess(existing.companyId, AuthService.getCurrentUser());
+    }
+
+    const filtered = papers.filter((p) => p.id !== id);
 
     this.saveStored(KEYS.PAPERS, filtered);
 

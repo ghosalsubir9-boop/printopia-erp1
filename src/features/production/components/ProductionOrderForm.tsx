@@ -82,8 +82,11 @@ export default function ProductionOrderForm({
   const loadApprovedPIs = async () => {
     try {
       const pis = await PIApiService.getInvoices();
-      // Filter for approved/accepted PIs
-      const approved = pis.filter(pi => pi.status === 'Production Approved' || pi.status === 'Accepted' || pi.status === 'Partially Paid' || pi.status === 'Paid' || pi.status === 'Converted to Production');
+      // Filter strictly for production-approved PIs that are not cancelled
+      const approved = pis.filter(pi => 
+        (pi.productionApproved || pi.isProductionApproved || pi.status === 'Production Approved' || pi.status === 'Converted to Production') &&
+        pi.status !== 'Cancelled'
+      );
       setApprovedPIs(approved);
     } catch (err) {
       console.error('Failed to load PIs', err);
