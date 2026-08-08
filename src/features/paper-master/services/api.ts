@@ -47,15 +47,60 @@ const initialCategories: PaperCategory[] = [
 ];
 
 const initialParentSheets: ParentSheetSize[] = [
-  { id: 'sht-1', name: '17×22', width: 17, height: 22, unit: 'inch', createdAt: new Date().toISOString() },
-  { id: 'sht-2', name: '17×24', width: 17, height: 24, unit: 'inch', createdAt: new Date().toISOString() },
+  { id: 'sht-17x24', name: '17×24', width: 17, height: 24, unit: 'inch', createdAt: new Date().toISOString() },
   { id: 'sht-3', name: '20×30', width: 20, height: 30, unit: 'inch', createdAt: new Date().toISOString() },
   { id: 'sht-4', name: '23×36', width: 23, height: 36, unit: 'inch', createdAt: new Date().toISOString() },
   { id: 'sht-5', name: '25×36', width: 25, height: 36, unit: 'inch', createdAt: new Date().toISOString() },
   { id: 'sht-6', name: '25×38', width: 25, height: 38, unit: 'inch', createdAt: new Date().toISOString() },
   { id: 'sht-7', name: '25×39', width: 25, height: 39, unit: 'inch', createdAt: new Date().toISOString() },
-  { id: 'sht-8', name: '28×40', width: 28, height: 40, unit: 'inch', createdAt: new Date().toISOString() }
+  { id: 'sht-9', name: '28×32', width: 28, height: 32, unit: 'inch', createdAt: new Date().toISOString() },
+  { id: 'sht-8', name: '28×40', width: 28, height: 40, unit: 'inch', createdAt: new Date().toISOString() },
+  { id: 'sht-30x40', name: '30×40', width: 30, height: 40, unit: 'inch', createdAt: new Date().toISOString() },
+  { id: 'sht-custom', name: 'Custom', width: 0, height: 0, unit: 'inch', createdAt: new Date().toISOString() }
 ];
+
+/**
+ * Helper to determine if a parent sheet size is mapped to a paper category.
+ *
+ * MAPPING RULES:
+ * - Bond: 17 × 24 inch
+ * - Maplitho: 20 × 30 inch, 23 × 36 inch, 25 × 36 inch, 30 × 40 inch
+ * - Art Paper / Art Card: 20 × 30 inch, 23 × 36 inch, 25 × 36 inch, 30 × 40 inch
+ * - Custom sheet size must remain available for all categories.
+ * - Unconstrained categories: show all sheet sizes.
+ */
+export function isSheetMappedToCategory(sheet: ParentSheetSize, categoryNameOrCode?: string): boolean {
+  if (!categoryNameOrCode) return true;
+  // Custom sheet size must always remain available
+  if (sheet.id === 'sht-custom' || sheet.name.toLowerCase() === 'custom') {
+    return true;
+  }
+
+  const cat = categoryNameOrCode.toLowerCase().trim();
+  const w = Math.min(sheet.width, sheet.height);
+  const h = Math.max(sheet.width, sheet.height);
+
+  const is17x24 = (w === 17 && h === 24) || /17\s*[×xX]\s*24/.test(sheet.name);
+  const is20x30 = (w === 20 && h === 30) || /20\s*[×xX]\s*30/.test(sheet.name);
+  const is23x36 = (w === 23 && h === 36) || /23\s*[×xX]\s*36/.test(sheet.name);
+  const is25x36 = (w === 25 && h === 36) || /25\s*[×xX]\s*36/.test(sheet.name);
+  const is30x40 = (w === 30 && h === 40) || /30\s*[×xX]\s*40/.test(sheet.name);
+
+  if (cat.includes('bond') || cat === 'bnd') {
+    return is17x24;
+  }
+
+  if (
+    cat.includes('maplitho') || cat === 'map' ||
+    cat.includes('art paper') || cat === 'art' ||
+    cat.includes('art card') || cat === 'crd'
+  ) {
+    return is20x30 || is23x36 || is25x36 || is30x40;
+  }
+
+  // Unrestricted for other paper categories
+  return true;
+}
 
 const initialGSMs: PaperGSM[] = [
   { id: 'gsm-1', gsmValue: 58, description: 'Light NCR/Flyer', createdAt: new Date().toISOString() },
@@ -79,119 +124,224 @@ const initialPurchaseUnits: PurchaseUnit[] = [
   { id: 'unit-4', name: 'Per Packet', code: 'PKT', createdAt: new Date().toISOString() }
 ];
 
-// Seed some initial papers
+// Seed some initial papers with real-world commercial printing brands
 const initialPapers: PaperMasterItem[] = [
   {
-    id: 'p-101',
-    paperName: 'Classic Silk Finish Art Paper',
-    paperCode: 'PAP-CS-130',
-    categoryId: 'cat-3', // Art Paper
-    manufacturer: 'BILT / Century',
-    brand: 'Royal Silk Gloss',
-    shade: 'Warm Natural White',
-    grainDirection: 'Long',
-    supportedGSMIds: ['gsm-6', 'gsm-7', 'gsm-8'], // 120, 130, 170
-    supportedSheetIds: ['sht-3', 'sht-4', 'sht-6'], // 20x30, 23x36, 25x38
+    id: 'p-1',
+    paperName: 'JK Maplitho Superfine - 80 GSM - 23×36',
+    paperCode: 'PAP-JK-80-23X36',
+    categoryId: 'cat-2', // Maplitho
+    manufacturer: '',
+    brand: 'JK Paper',
+    shade: '',
+    grainDirection: 'N/A',
+    gsmId: 'gsm-3', // 80 GSM
+    parentSheetId: 'sht-4', // 23×36
+    supportedGSMIds: ['gsm-3'],
+    supportedSheetIds: ['sht-4'],
     purchaseUnitId: 'unit-3', // Per Kg
+    rate: 115.00,
     status: 'Active',
-    remarks: 'Premium double coated gloss art paper with exceptionally stable ink receptivity.',
+    remarks: 'Premium high-brightness uncoated wove paper, ideal for book printing and publication runs.',
     stock: {
-      paperId: 'p-101',
-      openingStock: 2500,
-      availableStock: 1850,
-      reservedStock: 450,
+      paperId: 'p-1',
+      openingStock: 5000,
+      availableStock: 3800,
+      reservedStock: 200,
       minimumStock: 1000,
-      reorderLevel: 1500,
-      closingStock: 1850
+      reorderLevel: 2000,
+      closingStock: 4000
     },
     createdAt: new Date(Date.now() - 30 * 86400000).toISOString(),
     updatedAt: new Date(Date.now() - 15 * 86400000).toISOString(),
-    createdBy: 'subir.ghosal',
-    updatedBy: 'subir.ghosal'
+    createdBy: 'admin',
+    updatedBy: 'admin'
   },
   {
-    id: 'p-102',
-    paperName: 'Superfine Offset Maplitho',
-    paperCode: 'PAP-MAP-80',
+    id: 'p-2',
+    paperName: 'Century Maplitho - 80 GSM - 23×36',
+    paperCode: 'PAP-CENT-80-23X36',
     categoryId: 'cat-2', // Maplitho
-    manufacturer: 'JK Paper Mills',
-    brand: 'JK Maplitho Super',
-    shade: 'High Bright Blue White',
-    grainDirection: 'Short',
-    supportedGSMIds: ['gsm-2', 'gsm-3', 'gsm-4'], // 70, 80, 90
-    supportedSheetIds: ['sht-1', 'sht-4', 'sht-8'], // 17x22, 23x36, 28x40
-    purchaseUnitId: 'unit-2', // Per Ream
+    manufacturer: '',
+    brand: 'Century',
+    shade: '',
+    grainDirection: 'N/A',
+    gsmId: 'gsm-3', // 80 GSM
+    parentSheetId: 'sht-4', // 23×36
+    supportedGSMIds: ['gsm-3'],
+    supportedSheetIds: ['sht-4'],
+    purchaseUnitId: 'unit-3', // Per Kg
+    rate: 112.00,
     status: 'Active',
-    remarks: 'Uncoated writing-printing maplitho, excellent tensile strength for bulk text runs.',
+    remarks: 'High quality uncoated offset printing paper from Century.',
     stock: {
-      paperId: 'p-102',
-      openingStock: 250,
-      availableStock: 180,
-      reservedStock: 30,
-      minimumStock: 50,
-      reorderLevel: 80,
-      closingStock: 180
+      paperId: 'p-2',
+      openingStock: 4000,
+      availableStock: 3100,
+      reservedStock: 100,
+      minimumStock: 800,
+      reorderLevel: 1500,
+      closingStock: 3000
+    },
+    createdAt: new Date(Date.now() - 30 * 86400000).toISOString(),
+    updatedAt: new Date(Date.now() - 15 * 86400000).toISOString(),
+    createdBy: 'admin',
+    updatedBy: 'admin'
+  },
+  {
+    id: 'p-3',
+    paperName: 'West Coast Maplitho - 80 GSM - 23×36',
+    paperCode: 'PAP-WST-80-23X36',
+    categoryId: 'cat-2', // Maplitho
+    manufacturer: '',
+    brand: 'West Coast',
+    shade: '',
+    grainDirection: 'N/A',
+    gsmId: 'gsm-3', // 80 GSM
+    parentSheetId: 'sht-4', // 23×36
+    supportedGSMIds: ['gsm-3'],
+    supportedSheetIds: ['sht-4'],
+    purchaseUnitId: 'unit-3', // Per Kg
+    rate: 110.00,
+    status: 'Active',
+    remarks: 'Sturdy maplitho paper suitable for standard text runs.',
+    stock: {
+      paperId: 'p-3',
+      openingStock: 3000,
+      availableStock: 2500,
+      reservedStock: 0,
+      minimumStock: 500,
+      reorderLevel: 1000,
+      closingStock: 2500
+    },
+    createdAt: new Date(Date.now() - 30 * 86400000).toISOString(),
+    updatedAt: new Date(Date.now() - 15 * 86400000).toISOString(),
+    createdBy: 'admin',
+    updatedBy: 'admin'
+  },
+  {
+    id: 'p-4',
+    paperName: 'BILT Royal Coated Art - 130 GSM - 23×36',
+    paperCode: 'PAP-BILT-130-23X36',
+    categoryId: 'cat-3', // Art Paper
+    manufacturer: '',
+    brand: 'BILT',
+    shade: '',
+    grainDirection: 'N/A',
+    gsmId: 'gsm-7', // 130 GSM
+    parentSheetId: 'sht-4', // 23×36
+    supportedGSMIds: ['gsm-7'],
+    supportedSheetIds: ['sht-4'],
+    purchaseUnitId: 'unit-3', // Per Kg
+    rate: 125.00,
+    status: 'Active',
+    remarks: 'Premium coated gloss art paper with exceptionally stable ink receptivity.',
+    stock: {
+      paperId: 'p-4',
+      openingStock: 3000,
+      availableStock: 2400,
+      reservedStock: 100,
+      minimumStock: 500,
+      reorderLevel: 1000,
+      closingStock: 2500
     },
     createdAt: new Date(Date.now() - 28 * 86400000).toISOString(),
     updatedAt: new Date(Date.now() - 28 * 86400000).toISOString(),
-    createdBy: 'subir.ghosal',
-    updatedBy: 'subir.ghosal'
+    createdBy: 'admin',
+    updatedBy: 'admin'
   },
   {
-    id: 'p-103',
-    paperName: 'Premium High-Bulk Coated Art Card',
-    paperCode: 'PAP-AC-300',
-    categoryId: 'cat-4', // Art Card
-    manufacturer: 'Nippon Paper',
-    brand: 'Nippon Ultra-Bulk Matt',
-    shade: 'Ivory White',
-    grainDirection: 'Long',
-    supportedGSMIds: ['gsm-10', 'gsm-11', 'gsm-12'], // 250, 300, 350
-    supportedSheetIds: ['sht-3', 'sht-4', 'sht-5'], // 20x30, 23x36, 25x36
-    purchaseUnitId: 'unit-1', // Per Sheet
+    id: 'p-5',
+    paperName: 'APP Neo Art Gloss - 130 GSM - 23×36',
+    paperCode: 'PAP-APP-130-23X36',
+    categoryId: 'cat-3', // Art Paper
+    manufacturer: '',
+    brand: 'APP',
+    shade: '',
+    grainDirection: 'N/A',
+    gsmId: 'gsm-7', // 130 GSM
+    parentSheetId: 'sht-4', // 23×36
+    supportedGSMIds: ['gsm-7'],
+    supportedSheetIds: ['sht-4'],
+    purchaseUnitId: 'unit-3', // Per Kg
+    rate: 128.00,
     status: 'Active',
-    remarks: 'Exceptional bulk-to-weight ratio, ideal for luxury greeting cards, covers, and cosmetic folding boxes.',
+    remarks: 'Double-coated high fidelity art paper from APP Asia Pulp & Paper.',
     stock: {
-      paperId: 'p-103',
-      openingStock: 12000,
-      availableStock: 11200,
+      paperId: 'p-5',
+      openingStock: 2500,
+      availableStock: 1800,
+      reservedStock: 50,
+      minimumStock: 400,
+      reorderLevel: 800,
+      closingStock: 1800
+    },
+    createdAt: new Date(Date.now() - 28 * 86400000).toISOString(),
+    updatedAt: new Date(Date.now() - 28 * 86400000).toISOString(),
+    createdBy: 'admin',
+    updatedBy: 'admin'
+  },
+  {
+    id: 'p-6',
+    paperName: 'APP Sinar Line Art Card - 300 GSM - 25×36',
+    paperCode: 'PAP-SINAR-300-25X36',
+    categoryId: 'cat-4', // Art Card
+    manufacturer: '',
+    brand: 'APP',
+    shade: '',
+    grainDirection: 'N/A',
+    gsmId: 'gsm-11', // 300 GSM
+    parentSheetId: 'sht-5', // 25×36
+    supportedGSMIds: ['gsm-11'],
+    supportedSheetIds: ['sht-5'],
+    purchaseUnitId: 'unit-1', // Per Sheet
+    rate: 14.50,
+    status: 'Active',
+    remarks: 'High-bulk smooth art card, great stiffness and folding properties.',
+    stock: {
+      paperId: 'p-6',
+      openingStock: 15000,
+      availableStock: 12200,
       reservedStock: 800,
       minimumStock: 3000,
       reorderLevel: 5000,
-      closingStock: 11200
+      closingStock: 13000
     },
     createdAt: new Date(Date.now() - 10 * 86400000).toISOString(),
     updatedAt: new Date(Date.now() - 1 * 86400000).toISOString(),
-    createdBy: 'subir.ghosal',
-    updatedBy: 'subir.ghosal'
+    createdBy: 'admin',
+    updatedBy: 'admin'
   },
   {
-    id: 'p-104',
-    paperName: 'Heavyweight Grey Back Duplex Board',
-    paperCode: 'PAP-DPX-280',
-    categoryId: 'cat-5', // Duplex
-    manufacturer: 'Century Pulp & Paper',
-    brand: 'Century Duplex Super',
-    shade: 'Grey-Back Coated White',
+    id: 'p-7',
+    paperName: 'Imported Premium Art Card - 300 GSM - 25×36',
+    paperCode: 'PAP-IMP-300-25X36',
+    categoryId: 'cat-4', // Art Card
+    manufacturer: '',
+    brand: 'Imported',
+    shade: '',
     grainDirection: 'N/A',
-    supportedGSMIds: ['gsm-11', 'gsm-12'], // 300, 350
-    supportedSheetIds: ['sht-3', 'sht-8'], // 20x30, 28x40
-    purchaseUnitId: 'unit-3', // Per Kg
-    status: 'Inactive',
-    remarks: 'Discontinued temporarily due to mill maintenance. Excellent folding box cardboard backing.',
+    gsmId: 'gsm-11', // 300 GSM
+    parentSheetId: 'sht-5', // 25×36
+    supportedGSMIds: ['gsm-11'],
+    supportedSheetIds: ['sht-5'],
+    purchaseUnitId: 'unit-1', // Per Sheet
+    rate: 16.20,
+    status: 'Active',
+    remarks: 'Imported premium high stiffness art card.',
     stock: {
-      paperId: 'p-104',
-      openingStock: 4500,
-      availableStock: 0,
+      paperId: 'p-7',
+      openingStock: 10000,
+      availableStock: 9000,
       reservedStock: 0,
-      minimumStock: 1000,
-      reorderLevel: 2000,
-      closingStock: 0
+      minimumStock: 2000,
+      reorderLevel: 3000,
+      closingStock: 9000
     },
-    createdAt: new Date(Date.now() - 40 * 86400000).toISOString(),
-    updatedAt: new Date(Date.now() - 5 * 86400000).toISOString(),
-    createdBy: 'subir.ghosal',
-    updatedBy: 'subir.ghosal'
+    createdAt: new Date(Date.now() - 10 * 86400000).toISOString(),
+    updatedAt: new Date(Date.now() - 1 * 86400000).toISOString(),
+    createdBy: 'admin',
+    updatedBy: 'admin'
   }
 ];
 
@@ -199,53 +349,94 @@ const initialPapers: PaperMasterItem[] = [
 const initialRates: PaperRateHistoryItem[] = [
   {
     id: 'rate-1',
-    paperId: 'p-101',
+    paperId: 'p-1',
     effectiveDate: new Date(Date.now() - 30 * 86400000).toISOString().split('T')[0],
     purchaseUnitId: 'unit-3', // Per Kg
-    rate: 105.50,
+    rate: 115.00,
+    previousRate: 0,
+    user: 'admin',
+    reason: 'Initial baseline pricing setup',
     supplier: 'National Paper Mart',
-    remarks: 'Contract pricing for FY 2026 Q1',
+    remarks: 'Standard purchase contract rate',
     createdAt: new Date(Date.now() - 30 * 86400000).toISOString()
   },
   {
     id: 'rate-2',
-    paperId: 'p-101',
-    effectiveDate: new Date(Date.now() - 5 * 86400000).toISOString().split('T')[0],
+    paperId: 'p-2',
+    effectiveDate: new Date(Date.now() - 30 * 86400000).toISOString().split('T')[0],
     purchaseUnitId: 'unit-3', // Per Kg
-    rate: 112.00, // Rate update
+    rate: 112.00,
+    previousRate: 0,
+    user: 'admin',
+    reason: 'Initial baseline pricing setup',
     supplier: 'National Paper Mart',
-    remarks: 'Updated due to ocean freight surcharge increases',
-    createdAt: new Date(Date.now() - 5 * 86400000).toISOString()
+    remarks: 'Century maplitho rate',
+    createdAt: new Date(Date.now() - 30 * 86400000).toISOString()
   },
   {
     id: 'rate-3',
-    paperId: 'p-102',
-    effectiveDate: new Date(Date.now() - 28 * 86400000).toISOString().split('T')[0],
-    purchaseUnitId: 'unit-2', // Per Ream
-    rate: 2850.00,
-    supplier: 'Universal Paper Distributors',
-    remarks: 'Bulk contract rate - Maplitho text stock',
-    createdAt: new Date(Date.now() - 28 * 86400000).toISOString()
+    paperId: 'p-3',
+    effectiveDate: new Date(Date.now() - 30 * 86400000).toISOString().split('T')[0],
+    purchaseUnitId: 'unit-3', // Per Kg
+    rate: 110.00,
+    previousRate: 0,
+    user: 'admin',
+    reason: 'Initial baseline pricing setup',
+    supplier: 'National Paper Mart',
+    remarks: 'West Coast maplitho rate',
+    createdAt: new Date(Date.now() - 30 * 86400000).toISOString()
   },
   {
     id: 'rate-4',
-    paperId: 'p-103',
-    effectiveDate: new Date(Date.now() - 10 * 86400000).toISOString().split('T')[0],
-    purchaseUnitId: 'unit-1', // Per Sheet
-    rate: 14.25,
-    supplier: 'Imperial Paper & Board',
-    remarks: 'Standard pricing for 300GSM Art Cards',
-    createdAt: new Date(Date.now() - 10 * 86400000).toISOString()
+    paperId: 'p-4',
+    effectiveDate: new Date(Date.now() - 28 * 86400000).toISOString().split('T')[0],
+    purchaseUnitId: 'unit-3', // Per Kg
+    rate: 125.00,
+    previousRate: 0,
+    user: 'admin',
+    reason: 'Initial baseline pricing setup',
+    supplier: 'Universal Paper Distributors',
+    remarks: 'BILT Royal Art rate',
+    createdAt: new Date(Date.now() - 28 * 86400000).toISOString()
   },
   {
     id: 'rate-5',
-    paperId: 'p-104',
-    effectiveDate: new Date(Date.now() - 40 * 86400000).toISOString().split('T')[0],
+    paperId: 'p-5',
+    effectiveDate: new Date(Date.now() - 28 * 86400000).toISOString().split('T')[0],
     purchaseUnitId: 'unit-3', // Per Kg
-    rate: 76.80,
-    supplier: 'Century Sales Office',
-    remarks: 'Standard wholesale mill direct price',
-    createdAt: new Date(Date.now() - 40 * 86400000).toISOString()
+    rate: 128.00,
+    previousRate: 0,
+    user: 'admin',
+    reason: 'Initial baseline pricing setup',
+    supplier: 'Universal Paper Distributors',
+    remarks: 'APP Art Gloss rate',
+    createdAt: new Date(Date.now() - 28 * 86400000).toISOString()
+  },
+  {
+    id: 'rate-6',
+    paperId: 'p-6',
+    effectiveDate: new Date(Date.now() - 10 * 86400000).toISOString().split('T')[0],
+    purchaseUnitId: 'unit-1', // Per Sheet
+    rate: 14.50,
+    previousRate: 0,
+    user: 'admin',
+    reason: 'Initial baseline pricing setup',
+    supplier: 'Imperial Paper & Board',
+    remarks: 'APP Sinar Line Art Card rate',
+    createdAt: new Date(Date.now() - 10 * 86400000).toISOString()
+  },
+  {
+    id: 'rate-7',
+    paperId: 'p-7',
+    effectiveDate: new Date(Date.now() - 10 * 86400000).toISOString().split('T')[0],
+    purchaseUnitId: 'unit-1', // Per Sheet
+    rate: 16.20,
+    previousRate: 0,
+    user: 'admin',
+    reason: 'Initial baseline pricing setup',
+    supplier: 'Imperial Paper & Board',
+    remarks: 'Imported Premium Art Card rate',
+    createdAt: new Date(Date.now() - 10 * 86400000).toISOString()
   }
 ];
 
@@ -257,6 +448,12 @@ export class PaperApiService {
   
   // Generic helper getters for internal tables
   private static getStored<T>(key: string, defaultVal: T[]): T[] {
+    const isRefactored = localStorage.getItem('printopia_refactored_v2');
+    if (!isRefactored) {
+      localStorage.removeItem(KEYS.PAPERS);
+      localStorage.removeItem(KEYS.RATES);
+      localStorage.setItem('printopia_refactored_v2', 'true');
+    }
     const data = localStorage.getItem(key);
     if (!data) {
       localStorage.setItem(key, JSON.stringify(defaultVal));
@@ -346,7 +543,7 @@ export class PaperApiService {
       throw new Error('Paper Code is required.');
     }
     if (!paper.categoryId) {
-      throw new Error('Paper Category is required.');
+      throw new Error('Paper Type is required.');
     }
     if (!paper.purchaseUnitId) {
       throw new Error('Purchase Unit is required.');
@@ -402,8 +599,11 @@ export class PaperApiService {
       brand: paper.brand || '',
       shade: paper.shade || '',
       grainDirection: paper.grainDirection || 'N/A',
+      gsmId: paper.gsmId || (paper.supportedGSMIds?.[0] || ''),
+      parentSheetId: paper.parentSheetId || (paper.supportedSheetIds?.[0] || ''),
       supportedGSMIds: paper.supportedGSMIds || [],
       supportedSheetIds: paper.supportedSheetIds || [],
+      rate: paper.rate || paper.initialRate?.rate || 0,
       purchaseUnitId: paper.purchaseUnitId,
       status: paper.status || 'Active',
       remarks: paper.remarks || '',
@@ -621,7 +821,38 @@ export class PaperApiService {
 
   public static async getParentSheets(): Promise<ParentSheetSize[]> {
     await delay(100);
-    return this.getStored<ParentSheetSize>(KEYS.SHEETS, initialParentSheets);
+    const stored = this.getStored<ParentSheetSize>(KEYS.SHEETS, initialParentSheets);
+
+    let updated = false;
+    const merged = [...stored];
+
+    const isMatch = (s1: ParentSheetSize, s2: ParentSheetSize) => {
+      if (s1.id === s2.id) return true;
+      if (s1.width > 0 && s2.width > 0) {
+        const min1 = Math.min(s1.width, s1.height);
+        const max1 = Math.max(s1.width, s1.height);
+        const min2 = Math.min(s2.width, s2.height);
+        const max2 = Math.max(s2.width, s2.height);
+        if (min1 === min2 && max1 === max2) return true;
+      }
+      const n1 = s1.name.replace(/\s/g, '').replace(/[xX]/g, '×').toLowerCase();
+      const n2 = s2.name.replace(/\s/g, '').replace(/[xX]/g, '×').toLowerCase();
+      return n1 === n2;
+    };
+
+    for (const initSheet of initialParentSheets) {
+      const exists = merged.some((item) => isMatch(item, initSheet));
+      if (!exists) {
+        merged.push(initSheet);
+        updated = true;
+      }
+    }
+
+    if (updated) {
+      localStorage.setItem(KEYS.SHEETS, JSON.stringify(merged));
+    }
+
+    return merged;
   }
 
   public static async createParentSheet(name: string, width: number, height: number, unit: 'inch' | 'mm' = 'inch'): Promise<ParentSheetSize> {

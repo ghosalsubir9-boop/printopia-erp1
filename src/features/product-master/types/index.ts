@@ -26,6 +26,8 @@ export interface PaperOptionsConfig {
   parentSheets: string[]; // Parent sheet sizes, e.g. ["23x36", "18x23"]
 }
 
+export type FileAccessoriesType = 'None' | 'Clip' | 'Pocket' | 'Clip + Pocket';
+
 export interface SpecialProductOptions {
   // Lab Envelope
   window?: boolean;
@@ -79,6 +81,12 @@ export interface ProductMasterItem {
   paperOptions: PaperOptionsConfig;
   specialOptions: SpecialProductOptions;
   finishingOptions: string[]; // e.g. ["Lamination", "Matt Lamination", "UV", "Spot UV"]
+  fileAccessoriesEnabled?: boolean;
+  fileAccessoriesMandatory?: boolean;
+  defaultClipCost?: number;
+  defaultPocketCost?: number;
+  hsnCode?: string;
+  defaultGstRate?: number;
   
   createdAt: string;
   updatedAt: string;

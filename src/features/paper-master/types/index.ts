@@ -43,6 +43,9 @@ export interface PaperRateHistoryItem {
   effectiveDate: string; // ISO DateTime string
   purchaseUnitId: string; // e.g. "Per Ream", "Per Kg"
   rate: number; // Must be >= 0
+  previousRate?: number; // Previous Rate before update
+  user?: string; // Operator / User logging the rate
+  reason?: string; // Reason for the rate adjustment
   supplier: string;
   remarks?: string;
   createdAt: string;
@@ -68,9 +71,14 @@ export interface PaperMasterItem {
   shade: string;
   grainDirection: GrainDirection;
   
-  // Many-to-Many configurations (Array of IDs)
+  // Many-to-Many configurations (Array of IDs) - kept for structural compatibility
   supportedGSMIds: string[]; // Refs to PaperGSM
   supportedSheetIds: string[]; // Refs to ParentSheetSize
+  
+  // Single-select properties (Current Business Model)
+  gsmId?: string; // Ref to PaperGSM
+  parentSheetId?: string; // Ref to ParentSheetSize
+  rate: number; // Current baseline purchase rate
   
   purchaseUnitId: string; // Ref to PurchaseUnit
   status: PaperStatus;

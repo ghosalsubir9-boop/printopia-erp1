@@ -59,6 +59,7 @@ interface MachineFormProps {
 
 const MACHINE_TYPES = [
   'Offset',
+  'Offset Press',
   'Digital',
   'Flexo',
   'Screen',

@@ -3,13 +3,14 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   Box,
   Drawer,
   AppBar,
   Toolbar,
   List,
+  Collapse,
   Typography,
   Divider,
   IconButton,
@@ -39,19 +40,26 @@ import {
   VerifiedUser as UserIcon,
   Sync as SyncIcon,
   PowerSettingsNew as PowerIcon,
-  Layers as LayersIcon
+  Layers as LayersIcon,
+  ExpandLess,
+  ExpandMore,
+  Folder as FolderIcon,
+  Summarize,
+  AccountBalance as BankIcon
 } from '@mui/icons-material';
 import { ThemeProvider, createTheme } from '@mui/material/styles';
+import { AuthService } from '../../../services/authService';
 
-const DRAWER_WIDTH = 260;
+const DRAWER_WIDTH = 210;
 
 interface DashboardLayoutProps {
   children: React.ReactNode;
-  activeModule?: 'machines' | 'papers' | 'products' | 'customers';
-  onModuleChange?: (module: 'machines' | 'papers' | 'products' | 'customers') => void;
+  activeModule?: string;
+  onModuleChange?: (module: any) => void;
 }
 
 export default function DashboardLayout({ children, activeModule = 'machines', onModuleChange }: DashboardLayoutProps) {
+  const currentUser = AuthService.getCurrentUser();
   // Light/Dark mode state
   const [darkMode, setDarkMode] = useState<boolean>(() => {
     const saved = localStorage.getItem('printopia_dark_mode');
@@ -153,6 +161,56 @@ export default function DashboardLayout({ children, activeModule = 'machines', o
   // Responsive state
   const isMobile = useMediaQuery(theme.breakpoints.down('md'));
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [mastersExpanded, setMastersExpanded] = useState<boolean>(() => {
+    const saved = localStorage.getItem('printopia_masters_expanded');
+    return saved === 'true';
+  });
+
+  const [salesExpanded, setSalesExpanded] = useState<boolean>(() => {
+    const saved = localStorage.getItem('printopia_sales_expanded');
+    return saved === 'true';
+  });
+
+  const [purchaseExpanded, setPurchaseExpanded] = useState<boolean>(() => {
+    const saved = localStorage.getItem('printopia_purchase_expanded');
+    return saved === 'true';
+  });
+
+  useEffect(() => {
+    if (['customers', 'vendors', 'products', 'papers', 'machines'].includes(activeModule as string)) {
+      setMastersExpanded(true);
+    }
+    if (['quotations', 'proforma-invoices', 'gst-invoices', 'payment-receipts', 'customer-outstanding', 'credit-notes'].includes(activeModule as string)) {
+      setSalesExpanded(true);
+    }
+    if (['purchase-orders', 'grns', 'purchase-invoices', 'vendor-outstanding'].includes(activeModule as string)) {
+      setPurchaseExpanded(true);
+    }
+  }, [activeModule]);
+
+  const toggleMasters = () => {
+    setMastersExpanded((prev) => {
+      const next = !prev;
+      localStorage.setItem('printopia_masters_expanded', String(next));
+      return next;
+    });
+  };
+
+  const toggleSales = () => {
+    setSalesExpanded((prev) => {
+      const next = !prev;
+      localStorage.setItem('printopia_sales_expanded', String(next));
+      return next;
+    });
+  };
+
+  const togglePurchase = () => {
+    setPurchaseExpanded((prev) => {
+      const next = !prev;
+      localStorage.setItem('printopia_purchase_expanded', String(next));
+      return next;
+    });
+  };
 
   const handleDrawerToggle = () => {
     setMobileOpen(!mobileOpen);
@@ -168,16 +226,103 @@ export default function DashboardLayout({ children, activeModule = 'machines', o
   };
 
   // Navigation Links definition
-  const navItems = [
-    { text: 'ERP Dashboard', icon: <DashboardIcon />, disabled: true, tag: 'Coming Soon' },
-    { text: 'Machine Master (M-01)', icon: <BuildIcon />, active: activeModule === 'machines', tag: activeModule === 'machines' ? 'Active' : undefined, id: 'machines' },
-    { text: 'Paper Master (M-02)', icon: <InventoryIcon />, active: activeModule === 'papers', tag: activeModule === 'papers' ? 'Active' : undefined, id: 'papers' },
-    { text: 'Product Master (M-03)', icon: <LayersIcon />, active: activeModule === 'products', tag: activeModule === 'products' ? 'Active' : undefined, id: 'products' },
-    { text: 'Customer Master (M-04)', icon: <UserIcon />, active: activeModule === 'customers', tag: activeModule === 'customers' ? 'Active' : undefined, id: 'customers' },
-    { text: 'Estimation Engine', icon: <CalcIcon />, disabled: true },
-    { text: 'Job Ticketing (CTP)', icon: <ReceiptIcon />, disabled: true },
-    { text: 'Global Rates Setup', icon: <SettingsIcon />, disabled: true }
+  const mainNavItems = [
+    { text: 'Dashboard', icon: <DashboardIcon />, active: activeModule === 'dashboard', id: 'dashboard' },
+    { text: 'Finance Foundation', icon: <BankIcon />, active: activeModule === 'finance', id: 'finance' },
+    { text: 'Accounting Vouchers', icon: <ReceiptIcon />, active: activeModule === 'vouchers', id: 'vouchers', tag: 'New' },
+    { text: 'Financial Reports', icon: <Summarize sx={{ color: 'primary.light' }} />, active: activeModule === 'financial-reports', id: 'financial-reports', tag: 'New' },
   ];
+
+  const masterItems = [
+    { text: 'Customer Master', icon: <UserIcon />, active: activeModule === 'customers', id: 'customers' },
+    { text: 'Vendor Master', icon: <UserIcon />, active: activeModule === 'vendors', id: 'vendors' },
+    { text: 'Product Master', icon: <LayersIcon />, active: activeModule === 'products', id: 'products' },
+    { text: 'Paper Master', icon: <InventoryIcon />, active: activeModule === 'papers', id: 'papers' },
+    { text: 'Machine Master', icon: <BuildIcon />, active: activeModule === 'machines', id: 'machines' },
+    { text: 'Finishing Master', icon: <SyncIcon />, disabled: true },
+    { text: 'Tax Master', icon: <ReceiptIcon />, disabled: true },
+    { text: 'Company Settings', icon: <SettingsIcon />, active: activeModule === 'company-settings', id: 'company-settings' },
+  ];
+
+  const workflowItems = [
+    { text: 'Estimate', icon: <CalcIcon />, active: activeModule === 'estimates', id: 'estimates' },
+    { text: 'Job Card', icon: <ReceiptIcon />, active: activeModule === 'job-cards', id: 'job-cards' as any },
+    { text: 'Production', icon: <BuildIcon />, active: activeModule === 'production', id: 'production' as any },
+    { text: 'Delivery Challan', icon: <ReceiptIcon />, active: activeModule === 'production', id: 'production' as any },
+    { text: 'Inventory', icon: <InventoryIcon />, active: activeModule === 'inventory', id: 'inventory' as any },
+    { text: 'Reports', icon: <DashboardIcon />, disabled: true },
+    { text: 'Settings', icon: <SettingsIcon />, disabled: true },
+  ];
+
+  const salesItems = [
+    { text: 'Quotation', icon: <ReceiptIcon />, active: activeModule === 'quotations', id: 'quotations' },
+    { text: 'Proforma Invoice', icon: <ReceiptIcon />, active: activeModule === 'proforma-invoices', id: 'proforma-invoices' },
+    { text: 'GST Invoices', icon: <ReceiptIcon />, active: activeModule === 'gst-invoices', id: 'gst-invoices' },
+    { text: 'Payment Receipts', icon: <ReceiptIcon />, active: activeModule === 'payment-receipts', id: 'payment-receipts' },
+    { text: 'Customer Outstanding', icon: <ReceiptIcon />, active: activeModule === 'customer-outstanding', id: 'customer-outstanding' },
+    { text: 'Credit Notes', icon: <ReceiptIcon />, active: activeModule === 'credit-notes', id: 'credit-notes' },
+    { text: 'GST Reports', icon: <Summarize sx={{ color: 'secondary.light' }} />, active: activeModule === 'gst-reports', id: 'gst-reports', tag: 'New' },
+  ];
+
+  const purchaseItems = [
+    { text: 'Purchase Orders', icon: <ReceiptIcon />, active: activeModule === 'purchase-orders', id: 'purchase-orders' },
+    { text: 'Goods Receipt (GRN)', icon: <InventoryIcon />, active: activeModule === 'grns', id: 'grns' },
+    { text: 'Purchase Invoice', icon: <ReceiptIcon />, active: activeModule === 'purchase-invoices', id: 'purchase-invoices', tag: 'New' },
+    { text: 'Vendor Outstanding', icon: <ReceiptIcon />, active: activeModule === 'vendor-outstanding', id: 'vendor-outstanding', tag: 'New' },
+    { text: 'Purchase Return (Future)', icon: <SyncIcon />, disabled: true },
+  ];
+
+  const renderNavItem = (item: any, isSubItem = false) => (
+    <ListItem key={item.text} disablePadding>
+      <Tooltip title={item.disabled ? `${item.text} is under development` : ''} placement="right">
+        <Box sx={{ width: '100%' }}>
+          <ListItemButton
+            disabled={item.disabled}
+            onClick={() => {
+              if (!item.disabled && onModuleChange && item.id) {
+                onModuleChange(item.id as any);
+              }
+            }}
+            sx={{
+              borderRadius: '8px',
+              py: isSubItem ? 0.6 : 1,
+              px: 2,
+              pl: isSubItem ? 4 : 2,
+              bgcolor: item.active ? 'rgba(37, 99, 235, 0.15)' : 'transparent',
+              color: item.active ? 'white' : 'inherit',
+              '&.Mui-disabled': {
+                opacity: 0.4,
+                color: 'rgba(255, 255, 255, 0.25)'
+              },
+              '&:hover': {
+                bgcolor: item.active ? 'rgba(37, 99, 235, 0.2)' : 'rgba(255, 255, 255, 0.05)',
+                color: item.active ? 'white' : 'white'
+              }
+            }}
+          >
+            <ListItemIcon sx={{ minWidth: 38, color: item.active ? 'primary.light' : 'inherit' }}>
+              {item.icon}
+            </ListItemIcon>
+            <ListItemText
+              primary={
+                <Typography variant="body2" sx={{ fontSize: isSubItem ? '0.775rem' : '0.825rem', fontWeight: item.active ? 'bold' : 'medium' }}>
+                  {item.text}
+                </Typography>
+              }
+            />
+            {item.tag && (
+              <Chip
+                label={item.tag}
+                size="small"
+                color={item.active ? 'primary' : 'default'}
+                sx={{ height: 16, '& .MuiChip-label': { px: 0.8, fontSize: '0.6rem' } }}
+              />
+            )}
+          </ListItemButton>
+        </Box>
+      </Tooltip>
+    </ListItem>
+  );
 
   const drawerContent = (
     <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%', bgcolor: darkMode ? '#0f172a' : '#1e293b', color: '#94a3b8' }}>
@@ -197,61 +342,117 @@ export default function DashboardLayout({ children, activeModule = 'machines', o
       </Box>
 
       {/* Navigation List */}
-      <Box sx={{ flexGrow: 1, px: 1.5, py: 2 }}>
-        <Typography variant="caption" sx={{ pl: 1.5, fontWeight: 'bold', textTransform: 'uppercase', color: 'rgba(255, 255, 255, 0.35)', tracking: '1px', display: 'block', mb: 1 }}>
-          Core Modules
-        </Typography>
-        <List sx={{ p: 0, '& .MuiListItem-root': { mb: 0.5 } }}>
-          {navItems.map((item) => (
-            <ListItem key={item.text} disablePadding>
-              <Tooltip title={item.disabled ? `${item.text} is locked for Module-01 implementation` : ''} placement="right">
-                <Box sx={{ width: '100%' }}>
-                  <ListItemButton
-                    disabled={item.disabled}
-                    onClick={() => {
-                      if (!item.disabled && onModuleChange && item.id) {
-                        onModuleChange(item.id as 'machines' | 'papers' | 'products');
-                      }
-                    }}
-                    sx={{
-                      borderRadius: '8px',
-                      py: 1,
-                      px: 2,
-                      bgcolor: item.active ? 'rgba(37, 99, 235, 0.15)' : 'transparent',
-                      color: item.active ? 'white' : 'inherit',
-                      '&.Mui-disabled': {
-                        opacity: 0.4,
-                        color: 'rgba(255, 255, 255, 0.25)'
-                      },
-                      '&:hover': {
-                        bgcolor: item.active ? 'rgba(37, 99, 235, 0.2)' : 'rgba(255, 255, 255, 0.05)',
-                        color: item.active ? 'white' : 'white'
-                      }
-                    }}
-                  >
-                    <ListItemIcon sx={{ minWidth: 38, color: item.active ? 'primary.light' : 'inherit' }}>
-                      {item.icon}
-                    </ListItemIcon>
-                    <ListItemText
-                      primary={
-                        <Typography variant="body2" sx={{ fontSize: '0.825rem', fontWeight: item.active ? 'bold' : 'medium' }}>
-                          {item.text}
-                        </Typography>
-                      }
-                    />
-                    {item.tag && (
-                      <Chip
-                        label={item.tag}
-                        size="small"
-                        color={item.active ? 'primary' : 'default'}
-                        sx={{ height: 16, '& .MuiChip-label': { px: 0.8, fontSize: '0.6rem' } }}
-                      />
-                    )}
-                  </ListItemButton>
-                </Box>
-              </Tooltip>
-            </ListItem>
-          ))}
+      <Box sx={{ flexGrow: 1, px: 1.5, py: 2, overflowY: 'auto' }}>
+        <List sx={{ p: 0 }}>
+          {mainNavItems.map(item => renderNavItem(item))}
+          
+          <ListItem disablePadding sx={{ mb: 0.5 }}>
+            <ListItemButton
+              onClick={toggleMasters}
+              sx={{
+                borderRadius: '8px',
+                py: 1,
+                px: 2,
+                color: 'inherit',
+                '&:hover': {
+                  bgcolor: 'rgba(255, 255, 255, 0.05)',
+                  color: 'white'
+                }
+              }}
+            >
+              <ListItemIcon sx={{ minWidth: 38, color: 'inherit' }}>
+                <FolderIcon />
+              </ListItemIcon>
+              <ListItemText
+                primary={
+                  <Typography variant="body2" sx={{ fontSize: '0.825rem', fontWeight: 'bold' }}>
+                    Masters
+                  </Typography>
+                }
+              />
+              {mastersExpanded ? <ExpandLess /> : <ExpandMore />}
+            </ListItemButton>
+          </ListItem>
+          
+          <Collapse in={mastersExpanded} timeout="auto" unmountOnExit>
+            <List component="div" disablePadding>
+              {masterItems.map(item => renderNavItem(item, true))}
+            </List>
+          </Collapse>
+
+          <Divider sx={{ my: 1.5, borderColor: 'rgba(255, 255, 255, 0.08)' }} />
+          
+          {renderNavItem(workflowItems[0])}
+
+          <ListItem disablePadding sx={{ mb: 0.5 }}>
+            <ListItemButton
+              onClick={toggleSales}
+              sx={{
+                borderRadius: '8px',
+                py: 1,
+                px: 2,
+                color: 'inherit',
+                '&:hover': {
+                  bgcolor: 'rgba(255, 255, 255, 0.05)',
+                  color: 'white'
+                }
+              }}
+            >
+              <ListItemIcon sx={{ minWidth: 38, color: 'inherit' }}>
+                <FolderIcon />
+              </ListItemIcon>
+              <ListItemText
+                primary={
+                  <Typography variant="body2" sx={{ fontSize: '0.825rem', fontWeight: 'bold' }}>
+                    Sales & Billing
+                  </Typography>
+                }
+              />
+              {salesExpanded ? <ExpandLess /> : <ExpandMore />}
+            </ListItemButton>
+          </ListItem>
+          
+          <Collapse in={salesExpanded} timeout="auto" unmountOnExit>
+            <List component="div" disablePadding>
+              {salesItems.map(item => renderNavItem(item, true))}
+            </List>
+          </Collapse>
+
+          <ListItem disablePadding sx={{ mb: 0.5 }}>
+            <ListItemButton
+              onClick={togglePurchase}
+              sx={{
+                borderRadius: '8px',
+                py: 1,
+                px: 2,
+                color: 'inherit',
+                '&:hover': {
+                  bgcolor: 'rgba(255, 255, 255, 0.05)',
+                  color: 'white'
+                }
+              }}
+            >
+              <ListItemIcon sx={{ minWidth: 38, color: 'inherit' }}>
+                <FolderIcon />
+              </ListItemIcon>
+              <ListItemText
+                primary={
+                  <Typography variant="body2" sx={{ fontSize: '0.825rem', fontWeight: 'bold' }}>
+                    Purchase
+                  </Typography>
+                }
+              />
+              {purchaseExpanded ? <ExpandLess /> : <ExpandMore />}
+            </ListItemButton>
+          </ListItem>
+          
+          <Collapse in={purchaseExpanded} timeout="auto" unmountOnExit>
+            <List component="div" disablePadding>
+              {purchaseItems.map(item => renderNavItem(item, true))}
+            </List>
+          </Collapse>
+
+          {workflowItems.slice(1).map(item => renderNavItem(item))}
         </List>
       </Box>
 
@@ -288,7 +489,7 @@ export default function DashboardLayout({ children, activeModule = 'machines', o
             borderColor: darkMode ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.08)'
           }}
         >
-          <Toolbar sx={{ justifyContent: 'space-between', px: 3 }}>
+          <Toolbar sx={{ justifyContent: 'space-between', px: 2, minHeight: '48px !important' }}>
             <IconButton
               color="inherit"
               aria-label="open drawer"
@@ -301,16 +502,45 @@ export default function DashboardLayout({ children, activeModule = 'machines', o
 
             {/* Title / Section Name */}
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
-              <Typography variant="h6" sx={{ fontSize: '1rem', fontWeight: 800, tracking: '-0.2px' }}>
-                {activeModule === 'customers'
-                  ? 'Module-04: Customer Master CRM Configuration'
-                  : activeModule === 'products' 
-                    ? 'Module-03: Product Master Configuration' 
-                    : activeModule === 'papers' 
-                      ? 'Module-02: Paper Master Configuration' 
-                      : 'Module-01: Machine Master Configuration'}
+              <Typography variant="h6" sx={{ fontSize: '0.85rem', fontWeight: 800, tracking: '-0.2px', textTransform: 'uppercase', color: 'text.secondary' }}>
+                {activeModule === 'dashboard'
+                  ? 'Home Dashboard'
+                  : activeModule === 'proforma-invoices'
+                    ? 'Proforma Invoices'
+                    : activeModule === 'quotations'
+                      ? 'Quotations Workflow'
+                    : activeModule === 'estimates'
+                      ? 'Estimate Engine'
+                      : activeModule === 'customers'
+                        ? 'Customer Master CRM'
+                        : activeModule === 'vendors'
+                          ? 'Vendor Master'
+                        : activeModule === 'products' 
+                          ? 'Product Master' 
+                          : activeModule === 'papers' 
+                            ? 'Paper Master' 
+                          : activeModule === 'purchase-orders'
+                            ? 'Purchase Orders'
+                          : activeModule === 'grns'
+                            ? 'Goods Receipt Note (GRN)'
+                          : activeModule === 'inventory'
+                            ? 'Inventory & Stock'
+                          : activeModule === 'gst-invoices'
+                            ? 'GST Invoices'
+                          : activeModule === 'payment-receipts'
+                            ? 'Payment Receipts'
+                          : activeModule === 'customer-outstanding'
+                            ? 'Customer Outstanding'
+                          : activeModule === 'credit-notes'
+                            ? 'Credit Notes'
+                          : activeModule === 'gst-reports'
+                            ? 'GST Reports & Returns'
+                          : activeModule === 'company-settings'
+                            ? 'Company Settings'
+                          : activeModule === 'finance'
+                            ? 'Finance Foundation'
+                            : 'Machine Master'}
               </Typography>
-              <Chip label="Ready for PostgreSQL" size="small" color="success" variant="outlined" sx={{ display: { xs: 'none', sm: 'inline-flex' }, height: 20, fontSize: '0.65rem' }} />
             </Box>
 
             {/* Quick Actions Header Controls */}
@@ -334,11 +564,11 @@ export default function DashboardLayout({ children, activeModule = 'machines', o
               {/* User Profile avatar */}
               <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.2, cursor: 'pointer' }} onClick={handleMenuOpen}>
                 <Avatar sx={{ width: 32, height: 32, bgcolor: 'secondary.main', fontSize: '0.85rem', fontWeight: 'bold' }}>
-                  SG
+                  {currentUser?.userName.split(' ').map(n => n[0]).join('') || 'U'}
                 </Avatar>
                 <Box sx={{ display: { xs: 'none', sm: 'block' }, textAlign: 'left', lineHeight: 1 }}>
-                  <Typography variant="body2" sx={{ fontWeight: 'bold' }}>Subir Ghosal</Typography>
-                  <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.65rem' }}>System Architect</Typography>
+                  <Typography variant="body2" sx={{ fontWeight: 'bold' }}>{currentUser?.userName || 'Guest User'}</Typography>
+                  <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.65rem' }}>{currentUser?.role || 'System Role'}</Typography>
                 </Box>
               </Box>
 
@@ -406,9 +636,9 @@ export default function DashboardLayout({ children, activeModule = 'machines', o
           component="main"
           sx={{
             flexGrow: 1,
-            p: 4,
+            p: { xs: 1.5, md: 2.5 },
             width: { md: `calc(100% - ${DRAWER_WIDTH}px)` },
-            mt: '64px',
+            mt: '48px',
             overflowX: 'hidden'
           }}
         >

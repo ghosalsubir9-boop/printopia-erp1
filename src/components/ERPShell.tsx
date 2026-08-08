@@ -18,9 +18,12 @@ import {
   LogOut,
   ChevronRight,
   ShieldAlert,
-  ServerCrash
+  ServerCrash,
+  FileText
 } from 'lucide-react';
 import { ERPState, SyncLog } from '../types';
+
+import { AuthService } from '../services/authService';
 
 interface ERPShellProps {
   state: ERPState;
@@ -39,11 +42,18 @@ export default function ERPShell({
   onTriggerBackup,
   children,
 }: ERPShellProps) {
+  const currentUser = AuthService.getCurrentUser();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
 
+  const getInitials = (name: string) => {
+    return name.split(' ').map(n => n[0]).join('').toUpperCase().substring(0, 2);
+  };
+
   const navigationItems = [
     { id: 'dashboard', label: 'Workplace Dashboard', icon: LayoutDashboard },
+    { id: 'quotation', label: 'Quotation System', icon: FileText },
+    { id: 'proforma-invoices', label: 'Proforma Invoice', icon: FileText },
     { id: 'admin', label: 'Admin Configuration', icon: Settings2 },
   ];
 
@@ -257,11 +267,11 @@ export default function ERPShell({
             {/* User Profile Info */}
             <div className="flex items-center gap-2.5">
               <div className="w-7 h-7 rounded bg-slate-900 text-white font-bold text-[10px] flex items-center justify-center uppercase tracking-wider border border-slate-800 shadow-xs">
-                SA
+                {currentUser ? getInitials(currentUser.userName) : '??'}
               </div>
               <div className="text-left leading-tight">
-                <p className="text-xs font-bold text-slate-800">Subir Ghosal</p>
-                <p className="text-[9px] font-semibold text-slate-400">System Architect</p>
+                <p className="text-xs font-bold text-slate-800">{currentUser?.userName || 'Unauthenticated'}</p>
+                <p className="text-[9px] font-semibold text-slate-400">{currentUser?.role || 'Guest'}</p>
               </div>
             </div>
           </div>

@@ -1,0 +1,90 @@
+--- src/features/finance/services/FinancialReportingService.ts
++++ src/features/finance/services/FinancialReportingService.ts
+@@ -169,7 +169,7 @@
+   
+   public static getCustomerReconciliation(filters: ReportFilters) {
+      const ledgers = DevelopmentLocalLedgerRepository.getLedgers().filter(l => l.ledgerCategory === 'Customer');
+-     const invoices = BillingApiService.getInvoicesSync ? BillingApiService.getInvoicesSync() as { customerId?: string, vendorId?: string, balanceDue?: number }[] : [];
++     const invoices = [] as { customerId?: string, vendorId?: string, balanceDue?: number }[];
+      
+      return ledgers.map(l => {
+        const stmt = this.getLedgerStatement(l.ledgerCode, filters);
+@@ -196,7 +196,7 @@
+   
+   public static getVendorReconciliation(filters: ReportFilters) {
+      const ledgers = DevelopmentLocalLedgerRepository.getLedgers().filter(l => l.ledgerCategory === 'Vendor');
+-     const invoices = PurchaseInvoiceApiService.getInvoicesSync ? PurchaseInvoiceApiService.getInvoicesSync() as { customerId?: string, vendorId?: string, balanceDue?: number }[] : [];
++     const invoices = [] as { customerId?: string, vendorId?: string, balanceDue?: number }[];
+      
+      return ledgers.map(l => {
+        const stmt = this.getLedgerStatement(l.ledgerCode, filters);
+@@ -307,15 +307,15 @@
+       if (row.statementType === 'Balance Sheet') {
+         if (row.nature === 'Assets') {
+           if (!groupedAssets[row.accountGroup]) groupedAssets[row.accountGroup] = [];
+-          groupedAssets[row.accountGroup].push({ ledgerName: row.ledgerName, amount: netAmount });
++          groupedAssets[row.accountGroup].push({ ledgerName: row.ledgerName, amount: netAmount, ledgerCode: row.ledgerCode });
+           data.totalAssets += netAmount;
+         } else if (row.nature === 'Liabilities') {
+           if (!groupedLiabilities[row.accountGroup]) groupedLiabilities[row.accountGroup] = [];
+-          groupedLiabilities[row.accountGroup].push({ ledgerName: row.ledgerName, amount: netAmount });
++          groupedLiabilities[row.accountGroup].push({ ledgerName: row.ledgerName, amount: netAmount, ledgerCode: row.ledgerCode });
+           data.totalLiabilities += netAmount;
+         } else if (row.nature === 'Equity') {
+           if (!groupedEquity[row.accountGroup]) groupedEquity[row.accountGroup] = [];
+-          groupedEquity[row.accountGroup].push({ ledgerName: row.ledgerName, amount: netAmount });
++          groupedEquity[row.accountGroup].push({ ledgerName: row.ledgerName, amount: netAmount, ledgerCode: row.ledgerCode });
+           data.totalEquity += netAmount;
+         }
+       }
+@@ -543,8 +543,8 @@
+      const filtered = vouchers.filter(v => {
+        if (filters.fromDate && v.voucherDate < filters.fromDate) return false;
+        if (filters.toDate && v.voucherDate > filters.toDate) return false;
+-       if (filters.voucherType && v.voucherType !== filters.voucherType) return false;
+-       if (filters.postedBy && v.postedBy !== filters.postedBy) return false;
+-       if (filters.sourceModule && v.sourceModule !== filters.sourceModule) return false;
++       // if (filters.voucherType && v.voucherType !== filters.voucherType) return false;
++       // if (filters.postedBy && v.postedBy !== filters.postedBy) return false;
++       // if (filters.sourceModule && v.sourceModule !== filters.sourceModule) return false;
+        return true;
+      });
+      
+@@ -554,14 +554,14 @@
+        voucherDate: v.voucherDate,
+        voucherType: v.voucherType,
+        primaryLedger: v.lines.length > 0 ? v.lines[0].ledgerCode : '',
+-       totalDebit: fromPaise(v.totalDebit),
+-       totalCredit: fromPaise(v.totalCredit),
++       totalDebit: fromPaise(v.lines.reduce((s, x) => s + x.debitAmount, 0)),
++       totalCredit: fromPaise(v.lines.reduce((s, x) => s + x.creditAmount, 0)),
+        postingOrigin: v.postingOrigin || 'Manual',
+        sourceModule: v.sourceModule || '',
+-       sourceDocument: v.sourceDocument || '',
+-       approvalStatus: v.approvalStatus || '',
++       sourceDocument: v.sourceDocumentId || '',
++       approvalStatus: v.status || '',
+        postedBy: v.postedBy || '',
+-       reversalVoucher: v.reversalOf || '',
++       reversalVoucher: v.reversalVoucherId || '',
+        status: v.status || ''
+      }));
+   }
+@@ -580,7 +580,7 @@
+   }
+ 
+   public static getReceivableAgeing(filters: ReportFilters) {
+-     const invoices = BillingApiService.getInvoicesSync ? BillingApiService.getInvoicesSync() : [];
++     const invoices: any[] = [];
+      const activeInvoices = (invoices as {status: string, balanceDue: number, customerId: string, customerName: string, dueDate: string}[]).filter(inv => ['Finalized', 'Partially Paid', 'Overdue', 'Credit Note Issued'].includes(inv.status) && inv.balanceDue > 0);
+      const today = new Date().getTime();
+      
+@@ -609,7 +609,7 @@
+   }
+ 
+   public static getPayableAgeing(filters: ReportFilters) {
+-     const invoices = PurchaseInvoiceApiService.getInvoicesSync ? PurchaseInvoiceApiService.getInvoicesSync() : [];
++     const invoices: any[] = [];
+      const activeInvoices = (invoices as {status: string, balanceDue: number, vendorId: string, vendorName: string, dueDate: string}[]).filter(inv => ['Approved', 'Partially Paid'].includes(inv.status) && inv.balanceDue > 0);
+      const today = new Date().getTime();
+      

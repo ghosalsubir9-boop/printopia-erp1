@@ -6,7 +6,7 @@
 import { MachineMasterItem, SheetMappingItem, PrintingMethod } from '../types';
 import { initialMachineMasterItems } from '../seedData';
 
-const STORAGE_KEY = 'printopia_machine_master_registry';
+const STORAGE_KEY = 'printopia_machine_master_registry_v3';
 
 // Helper to simulate network latency
 const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -29,7 +29,8 @@ export class MachineApiService {
       return initialMachineMasterItems;
     }
     try {
-      return JSON.parse(data);
+      const parsed = JSON.parse(data) as MachineMasterItem[];
+      return parsed;
     } catch (e) {
       console.error('Error reading machine database from LocalStorage:', e);
       return initialMachineMasterItems;
@@ -55,7 +56,6 @@ export class MachineApiService {
 
     if (filters) {
       const { searchTerm, machineType, status, printingMethod } = filters;
-
       if (searchTerm) {
         const query = searchTerm.toLowerCase();
         machines = machines.filter(
@@ -66,15 +66,12 @@ export class MachineApiService {
             m.machineType.toLowerCase().includes(query)
         );
       }
-
       if (machineType && machineType !== 'All') {
         machines = machines.filter((m) => m.machineType === machineType);
       }
-
       if (status && status !== 'All') {
         machines = machines.filter((m) => m.status === status);
       }
-
       if (printingMethod && printingMethod !== 'All') {
         machines = machines.filter((m) =>
           m.supportedPrintingMethods.includes(printingMethod as PrintingMethod)
@@ -168,8 +165,8 @@ export class MachineApiService {
     await delay(300);
     const machines = this.getStoredMachines();
     const initialLength = machines.length;
-    const updated = machines.filter((m) => m.id !== id);
 
+    const updated = machines.filter((m) => m.id !== id);
     if (updated.length === initialLength) {
       throw new Error(`Machine with ID '${id}' not found.`);
     }

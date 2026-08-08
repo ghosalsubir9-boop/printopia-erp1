@@ -34,6 +34,9 @@ import {
 } from '@mui/icons-material';
 import { ProductMasterItem, ProductCategory, ProductStatus } from '../types';
 import { validateProductForm, ProductFormErrors } from '../validation';
+import { getCategoryPrefix, getNextProductSequence } from '../services/api';
+import { PaperApiService } from '../../paper-master/services/api';
+import { PaperCategory, PaperGSM, ParentSheetSize } from '../../paper-master/types';
 
 interface ProductFormProps {
   initialData?: ProductMasterItem | null;
@@ -80,13 +83,15 @@ export default function ProductForm({
 
   // Paper options list (Configurable)
   const [paperTypes, setPaperTypes] = useState<string[]>([]);
-  const [newPaperType, setNewPaperType] = useState('');
   
   const [gsms, setGsms] = useState<number[]>([]);
-  const [newGsm, setNewGsm] = useState('');
 
   const [parentSheets, setParentSheets] = useState<string[]>([]);
-  const [newParentSheet, setNewParentSheet] = useState('');
+
+  // Master Specs from Paper Master
+  const [masterPaperTypes, setMasterPaperTypes] = useState<PaperCategory[]>([]);
+  const [masterGSMs, setMasterGSMs] = useState<PaperGSM[]>([]);
+  const [masterSheets, setMasterSheets] = useState<ParentSheetSize[]>([]);
 
   // Finishing list selectables
   const [selectedFinishing, setSelectedFinishing] = useState<string[]>([]);
@@ -118,6 +123,7 @@ export default function ProductForm({
 
   // Initialize form with existing item
   useEffect(() => {
+    loadMasterSpecs();
     if (initialData) {
       setProductName(initialData.productName);
       setProductCode(initialData.productCode);
@@ -153,11 +159,41 @@ export default function ProductForm({
       setCloseHeight(8.5);
       setFinishedWidth(11.0);
       setFinishedHeight(8.5);
-      setPaperTypes(['Art Paper', 'Maplitho']);
-      setGsms([80, 130, 300]);
-      setParentSheets(['23x36', '20x30']);
+      setPaperTypes([]);
+      setGsms([]);
+      setParentSheets([]);
     }
   }, [initialData]);
+
+  // --- Dynamic Product Code Auto-Generation (Rule 1, 2 & 8) ---
+  useEffect(() => {
+    if (!isEditMode) {
+      if (categoryId) {
+        const cat = categories.find((c) => c.id === categoryId);
+        const prefix = getCategoryPrefix(productName, cat?.name || '', cat?.code || '');
+        const nextSeq = getNextProductSequence(prefix, existingProducts);
+        const paddedSeq = String(nextSeq).padStart(4, '0');
+        setProductCode(`${prefix}-${paddedSeq}`);
+      } else {
+        setProductCode('');
+      }
+    }
+  }, [productName, categoryId, categories, existingProducts, isEditMode]);
+
+  const loadMasterSpecs = async () => {
+    try {
+      const [pcats, gsms, sheets] = await Promise.all([
+        PaperApiService.getCategories(),
+        PaperApiService.getGSMs(),
+        PaperApiService.getParentSheets()
+      ]);
+      setMasterPaperTypes(pcats);
+      setMasterGSMs(gsms);
+      setMasterSheets(sheets);
+    } catch (error) {
+      console.error('Failed to load master specs', error);
+    }
+  };
 
   // Handle special checkbox options toggles
   const handleSpecialCheckboxChange = (key: string) => (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -172,41 +208,6 @@ export default function ProductForm({
       ...prev,
       [key]: e.target.value
     }));
-  };
-
-  // Tag list mutators
-  const addPaperType = () => {
-    if (newPaperType.trim() && !paperTypes.includes(newPaperType.trim())) {
-      setPaperTypes((prev) => [...prev, newPaperType.trim()]);
-      setNewPaperType('');
-    }
-  };
-
-  const removePaperType = (index: number) => {
-    setPaperTypes((prev) => prev.filter((_, i) => i !== index));
-  };
-
-  const addGsm = () => {
-    const val = parseInt(newGsm);
-    if (!isNaN(val) && val > 0 && !gsms.includes(val)) {
-      setGsms((prev) => [...prev, val].sort((a, b) => a - b));
-      setNewGsm('');
-    }
-  };
-
-  const removeGsm = (index: number) => {
-    setGsms((prev) => prev.filter((_, i) => i !== index));
-  };
-
-  const addParentSheet = () => {
-    if (newParentSheet.trim() && !parentSheets.includes(newParentSheet.trim())) {
-      setParentSheets((prev) => [...prev, newParentSheet.trim()]);
-      setNewParentSheet('');
-    }
-  };
-
-  const removeParentSheet = (index: number) => {
-    setParentSheets((prev) => prev.filter((_, i) => i !== index));
   };
 
   // Toggle finishing checkbox
@@ -352,13 +353,12 @@ export default function ProductForm({
                 <Grid size={{ xs: 12, sm: 4 }}>
                   <TextField
                     fullWidth
-                    label="Product Code *"
-                    placeholder="e.g. PRD-HOS-RX"
+                    label="Product Code"
                     value={productCode}
-                    onChange={(e) => setProductCode(e.target.value)}
+                    disabled={true}
                     error={Boolean(errors.productCode)}
-                    helperText={errors.productCode || 'Unique alphanumeric code'}
-                    slotProps={{ htmlInput: { style: { textTransform: 'uppercase', fontFamily: 'monospace' } } }}
+                    helperText={errors.productCode || (isEditMode ? 'Read-only after creation' : 'Auto-generated code')}
+                    slotProps={{ htmlInput: { readOnly: true, style: { textTransform: 'uppercase', fontFamily: 'monospace', fontWeight: 'bold' } } }}
                   />
                 </Grid>
 
@@ -744,35 +744,31 @@ export default function ProductForm({
                   <Typography variant="body2" sx={{ fontWeight: 'bold', mb: 1 }}>
                     Allowed Paper Types *
                   </Typography>
-                  <Box sx={{ display: 'flex', gap: 1, mb: 1 }}>
-                    <TextField
-                      size="small"
-                      placeholder="e.g. Art Paper"
-                      value={newPaperType}
-                      onChange={(e) => setNewPaperType(e.target.value)}
-                      onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), addPaperType())}
-                    />
-                    <Button variant="contained" size="small" onClick={addPaperType} sx={{ minWidth: 40 }}>
-                      Add
-                    </Button>
-                  </Box>
-                  <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, mt: 1 }}>
-                    {paperTypes.map((type, i) => (
-                      <Chip
-                        key={i}
-                        label={type}
-                        size="small"
-                        onDelete={() => removePaperType(i)}
-                        color="primary"
-                        variant="outlined"
-                      />
-                    ))}
-                    {paperTypes.length === 0 && (
-                      <Typography variant="caption" color="error">
-                        At least one paper type required!
-                      </Typography>
-                    )}
-                  </Box>
+                  <FormControl fullWidth size="small">
+                    <Select
+                      multiple
+                      value={paperTypes}
+                      onChange={(e) => setPaperTypes(typeof e.target.value === 'string' ? e.target.value.split(',') : e.target.value)}
+                      renderValue={(selected) => (
+                        <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+                          {selected.map((value) => (
+                            <Chip key={value} label={value} size="small" />
+                          ))}
+                        </Box>
+                      )}
+                    >
+                      {masterPaperTypes.map((cat) => (
+                        <MenuItem key={cat.id} value={cat.name}>
+                          {cat.name}
+                        </MenuItem>
+                      ))}
+                    </Select>
+                  </FormControl>
+                  {paperTypes.length === 0 && (
+                    <Typography variant="caption" color="error">
+                      At least one paper type required!
+                    </Typography>
+                  )}
                 </Box>
 
                 {/* B. Allowed GSMs */}
@@ -780,36 +776,31 @@ export default function ProductForm({
                   <Typography variant="body2" sx={{ fontWeight: 'bold', mb: 1 }}>
                     Allowed GSMs *
                   </Typography>
-                  <Box sx={{ display: 'flex', gap: 1, mb: 1 }}>
-                    <TextField
-                      size="small"
-                      type="number"
-                      placeholder="e.g. 130"
-                      value={newGsm}
-                      onChange={(e) => setNewGsm(e.target.value)}
-                      onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), addGsm())}
-                    />
-                    <Button variant="contained" size="small" onClick={addGsm} sx={{ minWidth: 40 }}>
-                      Add
-                    </Button>
-                  </Box>
-                  <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, mt: 1 }}>
-                    {gsms.map((gsm, i) => (
-                      <Chip
-                        key={i}
-                        label={`${gsm} GSM`}
-                        size="small"
-                        onDelete={() => removeGsm(i)}
-                        color="secondary"
-                        variant="outlined"
-                      />
-                    ))}
-                    {gsms.length === 0 && (
-                      <Typography variant="caption" color="error">
-                        At least one GSM value required!
-                      </Typography>
-                    )}
-                  </Box>
+                  <FormControl fullWidth size="small">
+                    <Select
+                      multiple
+                      value={gsms}
+                      onChange={(e) => setGsms(typeof e.target.value === 'string' ? [] : (e.target.value as number[]))}
+                      renderValue={(selected) => (
+                        <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+                          {selected.map((value) => (
+                            <Chip key={value} label={`${value} GSM`} size="small" />
+                          ))}
+                        </Box>
+                      )}
+                    >
+                      {masterGSMs.map((g) => (
+                        <MenuItem key={g.id} value={g.gsmValue}>
+                          {g.gsmValue} GSM
+                        </MenuItem>
+                      ))}
+                    </Select>
+                  </FormControl>
+                  {gsms.length === 0 && (
+                    <Typography variant="caption" color="error">
+                      At least one GSM value required!
+                    </Typography>
+                  )}
                 </Box>
 
                 {/* C. Parent Sheet Sizes */}
@@ -817,35 +808,31 @@ export default function ProductForm({
                   <Typography variant="body2" sx={{ fontWeight: 'bold', mb: 1 }}>
                     Supported Parent Sheets *
                   </Typography>
-                  <Box sx={{ display: 'flex', gap: 1, mb: 1 }}>
-                    <TextField
-                      size="small"
-                      placeholder="e.g. 23x36"
-                      value={newParentSheet}
-                      onChange={(e) => setNewParentSheet(e.target.value)}
-                      onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), addParentSheet())}
-                    />
-                    <Button variant="contained" size="small" onClick={addParentSheet} sx={{ minWidth: 40 }}>
-                      Add
-                    </Button>
-                  </Box>
-                  <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, mt: 1 }}>
-                    {parentSheets.map((size, i) => (
-                      <Chip
-                        key={i}
-                        label={`${size}"`}
-                        size="small"
-                        onDelete={() => removeParentSheet(i)}
-                        color="default"
-                        variant="outlined"
-                      />
-                    ))}
-                    {parentSheets.length === 0 && (
-                      <Typography variant="caption" color="error">
-                        At least one parent sheet size required!
-                      </Typography>
-                    )}
-                  </Box>
+                  <FormControl fullWidth size="small">
+                    <Select
+                      multiple
+                      value={parentSheets}
+                      onChange={(e) => setParentSheets(typeof e.target.value === 'string' ? e.target.value.split(',') : e.target.value)}
+                      renderValue={(selected) => (
+                        <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+                          {selected.map((value) => (
+                            <Chip key={value} label={value} size="small" />
+                          ))}
+                        </Box>
+                      )}
+                    >
+                      {masterSheets.map((s) => (
+                        <MenuItem key={s.id} value={s.name}>
+                          {s.name}
+                        </MenuItem>
+                      ))}
+                    </Select>
+                  </FormControl>
+                  {parentSheets.length === 0 && (
+                    <Typography variant="caption" color="error">
+                      At least one parent sheet size required!
+                    </Typography>
+                  )}
                 </Box>
               </CardContent>
             </Card>

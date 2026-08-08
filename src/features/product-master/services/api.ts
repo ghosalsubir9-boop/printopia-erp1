@@ -25,6 +25,71 @@ const KEYS = {
 };
 
 // ====================================================
+// PRODUCT CODE STANDARDIZATION HELPERS
+// ====================================================
+
+export const STANDARD_PREFIX_MAP: { [key: string]: string } = {
+  'prescription pad': 'PP',
+  'lab envelope': 'LE',
+  'opd file': 'OF',
+  'report pad': 'RP',
+  'bill book': 'BB',
+  'cash memo': 'CM',
+  'letterhead': 'LH',
+  'visiting card': 'VC',
+  'file folder': 'FF',
+  'sticker label': 'SL',
+  'test report file': 'TR',
+  'x-ray envelope': 'XE',
+  'receipt book': 'RB',
+  'brochure': 'BR',
+  'flex banner': 'FB',
+  'paper bag': 'PB',
+  'pp bag': 'PPB',
+  'non woven bag': 'NWB'
+};
+
+export function getCategoryPrefix(productName: string, categoryName: string, categoryCode: string): string {
+  const nameLower = (productName || '').toLowerCase().trim();
+  const catNameLower = (categoryName || '').toLowerCase().trim();
+
+  // Sort keys by length descending to match the most specific terms first
+  const sortedKeys = Object.keys(STANDARD_PREFIX_MAP).sort((a, b) => b.length - a.length);
+
+  for (const key of sortedKeys) {
+    if (nameLower.includes(key) || catNameLower.includes(key)) {
+      return STANDARD_PREFIX_MAP[key];
+    }
+  }
+
+  // Fallback: If Category Code exists, use it. E.g., HOS, COM, STA, PKG.
+  if (categoryCode) {
+    return categoryCode.toUpperCase().trim();
+  }
+
+  return 'PRD';
+}
+
+export function getNextProductSequence(prefix: string, existingProducts: ProductMasterItem[]): number {
+  let maxSeq = 0;
+  const regex = new RegExp(`^${prefix}-(\\d+)$`, 'i');
+  
+  existingProducts.forEach((p) => {
+    if (p.productCode) {
+      const match = p.productCode.trim().match(regex);
+      if (match) {
+        const seq = parseInt(match[1], 10);
+        if (seq > maxSeq) {
+          maxSeq = seq;
+        }
+      }
+    }
+  });
+  
+  return maxSeq + 1;
+}
+
+// ====================================================
 // INITIAL SEED DATA
 // ====================================================
 
@@ -66,6 +131,8 @@ const initialProducts: ProductMasterItem[] = [
     },
     specialOptions: { maplithoPaper: true, padding: true, perforation: true, numbering: true },
     finishingOptions: ['Padding', 'Perforation', 'Numbering'],
+    hsnCode: '4901',
+    defaultGstRate: 12, // Prescription pads can be 12% sometimes, but user said default 18% for commercial.
     createdAt: new Date(Date.now() - 15 * 86400000).toISOString(),
     updatedAt: new Date(Date.now() - 10 * 86400000).toISOString(),
     createdBy: 'subir.ghosal',
@@ -87,6 +154,8 @@ const initialProducts: ProductMasterItem[] = [
     },
     specialOptions: { window: true, windowSize: '3.5 x 1.5 inches', gumming: true, punch: false, dieRequired: true },
     finishingOptions: ['Die Cutting', 'Pasting', 'Punching'],
+    hsnCode: '4817',
+    defaultGstRate: 18,
     createdAt: new Date(Date.now() - 14 * 86400000).toISOString(),
     updatedAt: new Date(Date.now() - 14 * 86400000).toISOString(),
     createdBy: 'subir.ghosal',
@@ -108,6 +177,8 @@ const initialProducts: ProductMasterItem[] = [
     },
     specialOptions: { pocket: true, plasticClip: true, pocketAndClip: true, dieRequired: true },
     finishingOptions: ['Matt Lamination', 'Die Cutting', 'Creasing', 'Pasting'],
+    hsnCode: '4820',
+    defaultGstRate: 18,
     createdAt: new Date(Date.now() - 12 * 86400000).toISOString(),
     updatedAt: new Date(Date.now() - 5 * 86400000).toISOString(),
     createdBy: 'subir.ghosal',
@@ -194,6 +265,8 @@ const initialProducts: ProductMasterItem[] = [
     },
     specialOptions: { foldType: 'Tri-Fold' },
     finishingOptions: ['Gloss Lamination', 'Creasing', 'Folding'],
+    hsnCode: '4911',
+    defaultGstRate: 18,
     createdAt: new Date(Date.now() - 8 * 86400000).toISOString(),
     updatedAt: new Date(Date.now() - 2 * 86400000).toISOString(),
     createdBy: 'subir.ghosal',
@@ -215,6 +288,8 @@ const initialProducts: ProductMasterItem[] = [
     },
     specialOptions: {},
     finishingOptions: ['Matt Lamination', 'Spot UV', 'Die Cutting'],
+    hsnCode: '4911',
+    defaultGstRate: 18,
     createdAt: new Date(Date.now() - 7 * 86400000).toISOString(),
     updatedAt: new Date(Date.now() - 1 * 86400000).toISOString(),
     createdBy: 'subir.ghosal',
@@ -337,6 +412,39 @@ export class ProductApiService {
     await delay(350);
     let products = this.getStored<ProductMasterItem>(KEYS.PRODUCTS, initialProducts);
 
+    // Rule 5: Automatically assign/migrate product codes for existing products
+    let modified = false;
+    const categories = this.getStored<ProductCategory>(KEYS.CATEGORIES, initialCategories);
+    const codePattern = /^[A-Z]+-\d{4}$/;
+
+    products = products.map((p) => {
+      const trimmedCode = (p.productCode || '').trim().toUpperCase();
+      if (!trimmedCode || !codePattern.test(trimmedCode)) {
+        const cat = categories.find((c) => c.id === p.categoryId);
+        const prefix = getCategoryPrefix(p.productName, cat?.name || '', cat?.code || '');
+        
+        // Find existing conformant products to avoid sequence collision
+        const existingConformant = products.filter((other) => 
+          other.id !== p.id && 
+          other.productCode && 
+          codePattern.test(other.productCode.trim().toUpperCase())
+        );
+        
+        const nextSeq = getNextProductSequence(prefix, existingConformant);
+        const paddedSeq = String(nextSeq).padStart(4, '0');
+        p.productCode = `${prefix}-${paddedSeq}`;
+        modified = true;
+      } else if (p.productCode !== trimmedCode) {
+        p.productCode = trimmedCode;
+        modified = true;
+      }
+      return p;
+    });
+
+    if (modified) {
+      this.saveStored(KEYS.PRODUCTS, products);
+    }
+
     if (filters) {
       const { searchTerm, categoryId, status, paperType, finishingOption } = filters;
 
@@ -386,24 +494,33 @@ export class ProductApiService {
     if (!product.productName?.trim()) {
       throw new Error('Product Name is required.');
     }
-    if (!product.productCode?.trim()) {
-      throw new Error('Product Code is required.');
-    }
     if (!product.categoryId) {
       throw new Error('Category is required.');
     }
 
+    // Auto-generate if not provided or doesn't conform to pattern [PREFIX]-[4-digit sequence]
+    let finalCode = (product.productCode || '').trim().toUpperCase();
+    const codePattern = /^[A-Z]+-\d{4}$/;
+    if (!finalCode || !codePattern.test(finalCode)) {
+      const categories = this.getStored<ProductCategory>(KEYS.CATEGORIES, initialCategories);
+      const cat = categories.find((c) => c.id === product.categoryId);
+      const prefix = getCategoryPrefix(product.productName, cat?.name || '', cat?.code || '');
+      const nextSeq = getNextProductSequence(prefix, products);
+      const paddedSeq = String(nextSeq).padStart(4, '0');
+      finalCode = `${prefix}-${paddedSeq}`;
+    }
+
     const codeExists = products.some(
-      (p) => p.productCode.trim().toLowerCase() === product.productCode.trim().toLowerCase()
+      (p) => p.productCode.trim().toUpperCase() === finalCode
     );
     if (codeExists) {
-      throw new Error(`Product Code '${product.productCode}' is already registered in the registry.`);
+      throw new Error(`Product Code '${finalCode}' is already registered in the registry.`);
     }
 
     const newProduct: ProductMasterItem = {
       ...product,
       id: `prod-${Date.now()}`,
-      productCode: product.productCode.trim().toUpperCase(),
+      productCode: finalCode,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
       createdBy: 'subir.ghosal',
@@ -427,19 +544,13 @@ export class ProductApiService {
       throw new Error(`Product with ID '${id}' not found.`);
     }
 
-    if (updatedFields.productCode) {
-      const codeExists = products.some(
-        (p) => p.productCode.trim().toLowerCase() === updatedFields.productCode?.trim().toLowerCase() && p.id !== id
-      );
-      if (codeExists) {
-        throw new Error(`Product Code '${updatedFields.productCode}' is already registered.`);
-      }
-    }
+    // Rule 4 & 7: Product Code is read-only after creation and cannot be edited.
+    // Ensure we strip out any modifications to productCode to maintain read-only discipline.
+    const { productCode, ...safeFields } = updatedFields;
 
     const updatedProduct: ProductMasterItem = {
       ...products[index],
-      ...updatedFields,
-      productCode: updatedFields.productCode ? updatedFields.productCode.trim().toUpperCase() : products[index].productCode,
+      ...safeFields,
       updatedAt: new Date().toISOString(),
       updatedBy: 'subir.ghosal'
     };

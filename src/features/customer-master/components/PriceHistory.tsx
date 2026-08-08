@@ -23,7 +23,8 @@ import {
   DialogContent,
   DialogActions,
   Chip,
-  Tooltip
+  Tooltip,
+  Autocomplete
 } from '@mui/material';
 import {
   Add as AddIcon,
@@ -32,6 +33,8 @@ import {
 } from '@mui/icons-material';
 import { CustomerPriceHistory } from '../types';
 import { CustomerMasterService } from '../services/mockApi';
+import { ProductApiService } from '../../product-master/services/api';
+import { ProductMasterItem } from '../../product-master/types';
 
 interface PriceHistoryProps {
   customerId: string;
@@ -40,6 +43,7 @@ interface PriceHistoryProps {
 export default function PriceHistory({ customerId }: PriceHistoryProps) {
   const [history, setHistory] = useState<CustomerPriceHistory[]>([]);
   const [openDialog, setOpenDialog] = useState(false);
+  const [productList, setProductList] = useState<ProductMasterItem[]>([]);
 
   // New History Record Form fields
   const [quotationNumber, setQuotationNumber] = useState('');
@@ -48,6 +52,18 @@ export default function PriceHistory({ customerId }: PriceHistoryProps) {
   const [rate, setRate] = useState<number>(0.0);
   const [discount, setDiscount] = useState<number>(0);
   const [date, setDate] = useState<string>(new Date().toISOString().split('T')[0]);
+
+  useEffect(() => {
+    async function fetchProducts() {
+      try {
+        const list = await ProductApiService.getProducts({ status: 'Active' });
+        setProductList(list);
+      } catch (err) {
+        console.error('Failed to load products in PriceHistory:', err);
+      }
+    }
+    fetchProducts();
+  }, [openDialog]);
   const [salesPerson, setSalesPerson] = useState('');
 
   // Local validation errors
@@ -226,14 +242,24 @@ export default function PriceHistory({ customerId }: PriceHistoryProps) {
             </Grid>
 
             <Grid size={{ xs: 12 }}>
-              <TextField
-                fullWidth
-                label="Product / Print Specifications *"
-                placeholder="e.g. Prescription Pads, Folders with metallic clips"
+              <Autocomplete
+                freeSolo
+                id="qtn-product-select"
+                options={productList.map((p) => p.productName)}
+                noOptionsText="No Product Found. Please create Product in Product Master."
                 value={product}
-                onChange={(e) => setProduct(e.target.value)}
-                error={Boolean(errors.product)}
-                helperText={errors.product}
+                onInputChange={(event, newInputValue) => {
+                  setProduct(newInputValue);
+                }}
+                renderInput={(params) => (
+                  <TextField
+                    {...params}
+                    label="Product / Print Specifications *"
+                    placeholder="Search from Product Master or type custom details..."
+                    error={Boolean(errors.product)}
+                    helperText={errors.product || (productList.length === 0 ? "No Product Found. Please create Product in Product Master." : "Select from Product Master")}
+                  />
+                )}
               />
             </Grid>
 

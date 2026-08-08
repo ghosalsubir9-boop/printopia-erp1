@@ -115,12 +115,22 @@ export default function PaperMaster() {
   });
 
   const [rateEditPaper, setRateEditPaper] = useState<PaperMasterItem | null>(null);
-  const [rateForm, setRateForm] = useState<{ rate: number; supplier: string; remarks: string; effectiveDate: string; purchaseUnitId: string }>({
+  const [rateForm, setRateForm] = useState<{
+    rate: number;
+    supplier: string;
+    remarks: string;
+    effectiveDate: string;
+    purchaseUnitId: string;
+    user: string;
+    reason: string;
+  }>({
     rate: 0,
     supplier: '',
     remarks: '',
     effectiveDate: new Date().toISOString().split('T')[0],
-    purchaseUnitId: ''
+    purchaseUnitId: '',
+    user: 'Admin',
+    reason: ''
   });
 
   // Category CRUD modals
@@ -317,7 +327,9 @@ export default function PaperMaster() {
       supplier: '',
       remarks: '',
       effectiveDate: new Date().toISOString().split('T')[0],
-      purchaseUnitId: paper.purchaseUnitId
+      purchaseUnitId: paper.purchaseUnitId,
+      user: 'Admin',
+      reason: ''
     });
   };
 
@@ -331,14 +343,31 @@ export default function PaperMaster() {
       showToast('Supplier name is required.', 'error');
       return;
     }
+    if (!rateForm.user.trim()) {
+      showToast('Operator / User name is required.', 'error');
+      return;
+    }
 
     setIsLoading(true);
     try {
+      // Find previous rate
+      const paperRates = allRates.filter((r) => r.paperId === rateEditPaper.id);
+      let previousRate = 0;
+      if (paperRates.length > 0) {
+        const sorted = [...paperRates].sort(
+          (a, b) => new Date(b.effectiveDate).getTime() - new Date(a.effectiveDate).getTime()
+        );
+        previousRate = sorted[0].rate;
+      }
+
       const createdRate = await PaperApiService.createRateHistoryItem({
         paperId: rateEditPaper.id,
         effectiveDate: rateForm.effectiveDate,
         purchaseUnitId: rateForm.purchaseUnitId,
         rate: rateForm.rate,
+        previousRate,
+        user: rateForm.user.trim(),
+        reason: rateForm.reason.trim(),
         supplier: rateForm.supplier.trim(),
         remarks: rateForm.remarks.trim()
       });
@@ -365,7 +394,7 @@ export default function PaperMaster() {
 
   const handleSaveCategory = async () => {
     if (!categoryModal.name.trim() || !categoryModal.code.trim()) {
-      showToast('Category name and code are mandatory.', 'error');
+      showToast('Paper Type name and code are mandatory.', 'error');
       return;
     }
 
@@ -378,7 +407,7 @@ export default function PaperMaster() {
           description: categoryModal.description
         });
         setCategories((prev) => prev.map((c) => (c.id === updated.id ? updated : c)));
-        showToast(`Category '${updated.name}' modified successfully.`, 'success');
+        showToast(`Paper Type '${updated.name}' modified successfully.`, 'success');
       } else {
         const created = await PaperApiService.createCategory(
           categoryModal.name,
@@ -386,7 +415,7 @@ export default function PaperMaster() {
           categoryModal.description
         );
         setCategories((prev) => [...prev, created]);
-        showToast(`Category '${created.name}' registered.`, 'success');
+        showToast(`Paper Type '${created.name}' registered.`, 'success');
       }
       setCategoryModal({ open: false, name: '', code: '', description: '' });
     } catch (e: any) {
@@ -401,7 +430,7 @@ export default function PaperMaster() {
     try {
       await PaperApiService.deleteCategory(id);
       setCategories((prev) => prev.filter((c) => c.id !== id));
-      showToast('Category deleted successfully.', 'warning');
+      showToast('Paper Type deleted successfully.', 'warning');
     } catch (e: any) {
       showToast(e.message, 'error');
     } finally {
@@ -630,7 +659,7 @@ export default function PaperMaster() {
               ? currentView === 'list' ? 'Paper Master Registry' : currentView === 'add' ? 'Register New Paper' : 'Edit Paper Specs'
               : activeTab === 1 ? 'Paper Stock ledger'
               : activeTab === 2 ? 'Paper Sourcing Rate History'
-              : activeTab === 3 ? 'Paper Categories master'
+              : activeTab === 3 ? 'Paper Types master'
               : activeTab === 4 ? 'Parent Sheet size Library'
               : activeTab === 5 ? 'GSM Grammage Library'
               : 'Purchase Unit Master'}
@@ -686,7 +715,7 @@ export default function PaperMaster() {
             <Tab icon={<SettingsIcon fontSize="small" />} iconPosition="start" label="1. Papers Registry" />
             <Tab icon={<StockIcon fontSize="small" />} iconPosition="start" label="2. Paper Stock" />
             <Tab icon={<HistoryIcon fontSize="small" />} iconPosition="start" label="3. Rate History" />
-            <Tab icon={<CatIcon fontSize="small" />} iconPosition="start" label="4. Categories master" />
+            <Tab icon={<CatIcon fontSize="small" />} iconPosition="start" label="4. Paper Types master" />
             <Tab icon={<SizeIcon fontSize="small" />} iconPosition="start" label="5. Parent Sheets" />
             <Tab icon={<GSMIcon fontSize="small" />} iconPosition="start" label="6. GSM Library" />
             <Tab icon={<TrendIcon fontSize="small" />} iconPosition="start" label="7. Purchase Units" />
@@ -913,7 +942,10 @@ export default function PaperMaster() {
                         <TableCell sx={{ fontWeight: 'bold' }}>Paper Code</TableCell>
                         <TableCell sx={{ fontWeight: 'bold' }}>Effective Date</TableCell>
                         <TableCell sx={{ fontWeight: 'bold' }}>Purchase Unit</TableCell>
-                        <TableCell sx={{ fontWeight: 'bold' }} align="right">Contract Rate</TableCell>
+                        <TableCell sx={{ fontWeight: 'bold' }} align="right">Previous Rate</TableCell>
+                        <TableCell sx={{ fontWeight: 'bold' }} align="right">New Rate</TableCell>
+                        <TableCell sx={{ fontWeight: 'bold' }}>Operator / User</TableCell>
+                        <TableCell sx={{ fontWeight: 'bold' }}>Adjustment Reason</TableCell>
                         <TableCell sx={{ fontWeight: 'bold' }}>Supplier Entity</TableCell>
                         <TableCell sx={{ fontWeight: 'bold' }}>Sourcing Remarks</TableCell>
                         <TableCell sx={{ fontWeight: 'bold' }}>System timestamp</TableCell>
@@ -922,7 +954,7 @@ export default function PaperMaster() {
                     <TableBody>
                       {allRates.length === 0 ? (
                         <TableRow>
-                          <TableCell colSpan={8} align="center" sx={{ py: 6 }}>
+                          <TableCell colSpan={11} align="center" sx={{ py: 6 }}>
                             No rate invoices logged yet. Use the dropdown above to create a sourcing pricing tier.
                           </TableCell>
                         </TableRow>
@@ -936,8 +968,15 @@ export default function PaperMaster() {
                               <TableCell sx={{ fontFamily: 'monospace' }}>{p?.paperCode || 'N/A'}</TableCell>
                               <TableCell sx={{ fontWeight: 'medium' }}>{rate.effectiveDate}</TableCell>
                               <TableCell>{unit?.name || 'Per Sheet'}</TableCell>
+                              <TableCell align="right" sx={{ color: 'text.secondary' }}>
+                                {rate.previousRate && rate.previousRate > 0 ? `Rs. ${rate.previousRate.toFixed(2)}` : 'N/A (Seed)'}
+                              </TableCell>
                               <TableCell align="right" sx={{ fontWeight: 'bold', color: 'primary.main' }}>
                                 Rs. {rate.rate.toFixed(2)}
+                              </TableCell>
+                              <TableCell sx={{ fontWeight: 'medium' }}>{rate.user || 'System'}</TableCell>
+                              <TableCell sx={{ color: 'text.secondary', maxWidth: 150, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                {rate.reason || 'Initial Seed'}
                               </TableCell>
                               <TableCell sx={{ fontWeight: 'semibold' }}>{rate.supplier}</TableCell>
                               <TableCell sx={{ fontStyle: 'italic', color: 'text.secondary' }}>"{rate.remarks || 'No remarks recorded'}"</TableCell>
@@ -952,12 +991,12 @@ export default function PaperMaster() {
               </Box>
             )}
 
-            {/* TAB 3: CATEGORIES MASTER */}
+            {/* TAB 3: PAPER TYPES MASTER */}
             {activeTab === 3 && (
               <Box>
                 <Box sx={{ mb: 3, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <Typography variant="subtitle1" sx={{ fontWeight: 'bold' }}>
-                    Paper Category Library ({categories.length} Categories)
+                    Paper Type Library ({categories.length} Paper Types)
                   </Typography>
                   <Button
                     variant="contained"
@@ -966,7 +1005,7 @@ export default function PaperMaster() {
                     onClick={() => setCategoryModal({ open: true, name: '', code: '', description: '' })}
                     sx={{ textTransform: 'none', fontWeight: 'bold' }}
                   >
-                    Add Category
+                    Add Paper Type
                   </Button>
                 </Box>
 
@@ -974,8 +1013,8 @@ export default function PaperMaster() {
                   <Table>
                     <TableHead sx={{ bgcolor: 'action.hover' }}>
                       <TableRow>
-                        <TableCell sx={{ fontWeight: 'bold' }}>Category Code</TableCell>
-                        <TableCell sx={{ fontWeight: 'bold' }}>Category Name</TableCell>
+                        <TableCell sx={{ fontWeight: 'bold' }}>Paper Type Code</TableCell>
+                        <TableCell sx={{ fontWeight: 'bold' }}>Paper Type Name</TableCell>
                         <TableCell sx={{ fontWeight: 'bold' }}>Technical Description</TableCell>
                         <TableCell sx={{ fontWeight: 'bold' }} align="right">Actions</TableCell>
                       </TableRow>
@@ -1318,6 +1357,26 @@ export default function PaperMaster() {
                     onChange={(e) => setRateForm((prev) => ({ ...prev, supplier: e.target.value }))}
                   />
                 </Grid>
+                <Grid size={{ xs: 6 }}>
+                  <TextField
+                    fullWidth
+                    size="small"
+                    label="Logged By / Operator *"
+                    placeholder="e.g. Amit Saxena"
+                    value={rateForm.user}
+                    onChange={(e) => setRateForm((prev) => ({ ...prev, user: e.target.value }))}
+                  />
+                </Grid>
+                <Grid size={{ xs: 6 }}>
+                  <TextField
+                    fullWidth
+                    size="small"
+                    label="Reason for Rate Change"
+                    placeholder="e.g. Custom duty hike, bulk discount..."
+                    value={rateForm.reason}
+                    onChange={(e) => setRateForm((prev) => ({ ...prev, reason: e.target.value }))}
+                  />
+                </Grid>
                 <Grid size={{ xs: 12 }}>
                   <TextField
                     fullWidth
@@ -1340,17 +1399,17 @@ export default function PaperMaster() {
         )}
       </Dialog>
 
-      {/* Category CRUD Modal */}
+      {/* Paper Type CRUD Modal */}
       <Dialog open={categoryModal.open} onClose={() => setCategoryModal((prev) => ({ ...prev, open: false }))} maxWidth="xs" fullWidth>
         <DialogTitle sx={{ fontWeight: 'bold' }}>
-          {categoryModal.id ? 'Edit Category' : 'Add Category'}
+          {categoryModal.id ? 'Edit Paper Type' : 'Add Paper Type'}
         </DialogTitle>
         <DialogContent>
           <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, mt: 1 }}>
             <TextField
               fullWidth
               size="small"
-              label="Category Name *"
+              label="Paper Type Name *"
               placeholder="e.g. Maplitho"
               value={categoryModal.name}
               onChange={(e) => setCategoryModal((prev) => ({ ...prev, name: e.target.value }))}
@@ -1369,7 +1428,7 @@ export default function PaperMaster() {
               size="small"
               multiline
               rows={2}
-              label="Category Description"
+              label="Paper Type Description"
               placeholder="Superfine uncoated wove text..."
               value={categoryModal.description}
               onChange={(e) => setCategoryModal((prev) => ({ ...prev, description: e.target.value }))}

@@ -292,17 +292,17 @@ export default function PaperTable({
               />
             </Grid>
 
-            {/* Category Filter */}
+            {/* Paper Type Filter */}
             <Grid size={{ xs: 12, sm: 6, md: 2 }}>
               <FormControl fullWidth size="small">
-                <InputLabel id="category-filter-label">Category</InputLabel>
+                <InputLabel id="category-filter-label">Paper Type</InputLabel>
                 <Select
                   labelId="category-filter-label"
-                  label="Category"
+                  label="Paper Type"
                   value={categoryFilter}
                   onChange={(e) => setCategoryFilter(e.target.value)}
                 >
-                  <MenuItem value="All">All Categories</MenuItem>
+                  <MenuItem value="All">All Paper Types</MenuItem>
                   {categories.map((c) => (
                     <MenuItem key={c.id} value={c.id}>
                       {c.name}
@@ -397,9 +397,8 @@ export default function PaperTable({
             <TableRow>
               <TableCell width={50} />
               <TableCell sx={{ fontWeight: 800 }}>Paper Details</TableCell>
-              <TableCell sx={{ fontWeight: 800 }}>Code / Category</TableCell>
+              <TableCell sx={{ fontWeight: 800 }}>Paper Type</TableCell>
               <TableCell sx={{ fontWeight: 800 }}>Manufacturer / Brand</TableCell>
-              <TableCell sx={{ fontWeight: 800 }}>Stock Availability</TableCell>
               <TableCell sx={{ fontWeight: 800 }} align="center">Status</TableCell>
               <TableCell sx={{ fontWeight: 800 }} align="right">Actions</TableCell>
             </TableRow>
@@ -407,7 +406,7 @@ export default function PaperTable({
           <TableBody>
             {filteredPapers.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={7} align="center" sx={{ py: 8 }}>
+                <TableCell colSpan={6} align="center" sx={{ py: 8 }}>
                   <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 'medium', mb: 1 }}>
                     No paper specifications found in the active registry.
                   </Typography>
@@ -442,31 +441,23 @@ export default function PaperTable({
                           <Typography variant="body2" sx={{ fontWeight: 800, color: 'text.primary' }}>
                             {paper.paperName}
                           </Typography>
-                          <Typography variant="caption" color="text.secondary">
-                            Grain: <b>{paper.grainDirection}</b> | Shade: <b>{paper.shade || 'N/A'}</b>
+                          <Typography variant="caption" sx={{ fontFamily: 'monospace', color: 'text.secondary' }}>
+                            {paper.paperCode}
                           </Typography>
                         </Box>
                       </TableCell>
 
                       <TableCell>
-                        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
-                          <Typography variant="body2" sx={{ fontFamily: 'monospace', fontWeight: 'bold' }}>
-                            {paper.paperCode}
-                          </Typography>
-                          <Chip
-                            label={catName}
-                            size="small"
-                            color="primary"
-                            variant="outlined"
-                            sx={{
-                              alignSelf: 'flex-start',
-                              height: 18,
-                              fontSize: '0.65rem',
-                              fontWeight: 'bold',
-                              borderRadius: '4px'
-                            }}
-                          />
-                        </Box>
+                        <Chip
+                          label={catName}
+                          size="small"
+                          color="primary"
+                          variant="outlined"
+                          sx={{
+                            fontWeight: 'bold',
+                            borderRadius: '4px'
+                          }}
+                        />
                       </TableCell>
 
                       <TableCell>
@@ -477,38 +468,6 @@ export default function PaperTable({
                           <Typography variant="caption" color="text.secondary">
                             Mfr: {paper.manufacturer || 'Unspecified'}
                           </Typography>
-                        </Box>
-                      </TableCell>
-
-                      <TableCell>
-                        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
-                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                            <Typography variant="body2" sx={{ fontWeight: 'bold', color: isOutOfStock ? 'error.main' : isLowStock ? 'warning.main' : 'text.primary' }}>
-                              {st.availableStock.toLocaleString()}
-                            </Typography>
-                            <Typography variant="caption" color="text.secondary">
-                              {unitName}
-                            </Typography>
-                            {isOutOfStock ? (
-                              <Chip label="OUT" size="small" color="error" sx={{ height: 16, fontSize: '0.6rem', fontWeight: 'bold' }} />
-                            ) : isLowStock ? (
-                              <Chip label="LOW" size="small" color="error" variant="outlined" sx={{ height: 16, fontSize: '0.6rem', fontWeight: 'bold' }} />
-                            ) : isReorder ? (
-                              <Chip label="REORDER" size="small" color="warning" variant="outlined" sx={{ height: 16, fontSize: '0.6rem', fontWeight: 'bold' }} />
-                            ) : (
-                              <Chip label="SAFE" size="small" color="success" variant="outlined" sx={{ height: 16, fontSize: '0.6rem', fontWeight: 'bold' }} />
-                            )}
-                          </Box>
-                          
-                          {/* Mini progress bar toward Reorder Level */}
-                          <Box sx={{ width: 120 }}>
-                            <LinearProgress
-                              variant="determinate"
-                              value={Math.min(100, (st.availableStock / (st.minimumStock || 100)) * 100)}
-                              color={isLowStock ? 'error' : isReorder ? 'warning' : 'success'}
-                              sx={{ height: 4, borderRadius: 2 }}
-                            />
-                          </Box>
                         </Box>
                       </TableCell>
 
@@ -560,7 +519,7 @@ export default function PaperTable({
 
                     {/* Collapsible Row for comprehensive details */}
                     <TableRow onClick={(e) => e.stopPropagation()}>
-                      <TableCell colSpan={7} sx={{ py: 0, px: 4 }}>
+                      <TableCell colSpan={6} sx={{ py: 0, px: 4 }}>
                         <Collapse in={isExpanded} timeout="auto" unmountOnExit>
                           <Box sx={{ py: 3, px: 2, bgcolor: (theme) => theme.palette.mode === 'dark' ? 'rgba(30, 41, 59, 0.4)' : '#fcfdfe', borderLeft: '3px solid #2563eb', my: 1, borderRadius: 1 }}>
                             <Grid container spacing={3}>
@@ -727,7 +686,7 @@ export default function PaperTable({
                       <Typography variant="body1" sx={{ fontWeight: 'bold', fontFamily: 'monospace' }}>{detailModalPaper.paperCode}</Typography>
                     </Box>
                     <Box>
-                      <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>PAPER CATEGORY</Typography>
+                      <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>PAPER TYPE</Typography>
                       <Typography variant="body1" sx={{ fontWeight: 'bold' }}>
                         {categoryMap.get(detailModalPaper.categoryId)?.name || 'Unassigned'}
                       </Typography>

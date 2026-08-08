@@ -49,6 +49,7 @@ export interface MachineMasterItem {
   registerTime: number;       // setup register time in minutes
   registerWastage: number;    // initial register wastage sheets
   makeReadyWastage: number;   // makeready test sheets wasted
+  maxMakeReadyWastage?: number; // max limit for manual override
   plateCost: number;          // Cost of 1 plate in local currency (Rs.)
   printChargePer1000: number; // Printing run charge per 1000 impressions
   
