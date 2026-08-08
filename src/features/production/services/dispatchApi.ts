@@ -6,6 +6,7 @@
 import { DispatchRecord, DispatchStatus, ProductionStage } from '../types';
 import { ProductionApiService } from './api';
 import { QCApiService } from './qcApi';
+import { AuthService } from '../../../services/authService';
 
 const STORAGE_KEY = 'printopia_dispatches';
 
@@ -31,30 +32,38 @@ export class DispatchApiService {
 
   public static async getDispatches(): Promise<DispatchRecord[]> {
     await delay(200);
-    return this.getStoredDispatches().sort((a, b) => b.dispatchNumber.localeCompare(a.dispatchNumber));
+    const companyId = AuthService.requireCurrentCompanyId();
+    const list = this.getStoredDispatches().filter(item => item.companyId === companyId);
+    return list.sort((a, b) => b.dispatchNumber.localeCompare(a.dispatchNumber));
   }
 
   public static async getDispatchById(id: string): Promise<DispatchRecord | null> {
     await delay(100);
     const list = this.getStoredDispatches();
-    return list.find(item => item.id === id) || null;
+    const item = list.find(item => item.id === id) || null;
+    if (item) {
+      AuthService.assertTenantAccess(item.companyId, AuthService.getCurrentUser());
+    }
+    return item;
   }
 
   public static async getDispatchesByJobItem(poId: string, jobItemId: string): Promise<DispatchRecord[]> {
     await delay(100);
+    const companyId = AuthService.requireCurrentCompanyId();
     const list = this.getStoredDispatches();
-    return list.filter(item => item.productionOrderId === poId && item.jobItemId === jobItemId);
+    return list.filter(item => item.companyId === companyId && item.productionOrderId === poId && item.jobItemId === jobItemId);
   }
 
   public static async createDispatch(
-    dispatch: Omit<DispatchRecord, 'id' | 'dispatchNumber' | 'createdAt' | 'updatedAt' | 'totalDispatchedQuantity' | 'pendingDispatchQuantity' | 'status'>
+    dispatch: Omit<DispatchRecord, 'id' | 'companyId' | 'dispatchNumber' | 'createdAt' | 'updatedAt' | 'totalDispatchedQuantity' | 'pendingDispatchQuantity' | 'status'>
   ): Promise<DispatchRecord> {
     await delay(300);
+    const companyId = AuthService.requireCurrentCompanyId();
     const list = this.getStoredDispatches();
 
     // Auto Dispatch Number: DISP-YYYY-NNNN
     const currentYear = new Date().getFullYear();
-    const sameYear = list.filter(o => o.dispatchNumber.startsWith(`DISP-${currentYear}-`));
+    const sameYear = list.filter(o => o.companyId === companyId && o.dispatchNumber.startsWith(`DISP-${currentYear}-`));
     
     let nextSeq = 1;
     if (sameYear.length > 0) {
@@ -77,6 +86,7 @@ export class DispatchApiService {
 
     const newDispatch: DispatchRecord = {
       ...dispatch,
+      companyId,
       id,
       dispatchNumber,
       totalDispatchedQuantity,
@@ -103,9 +113,13 @@ export class DispatchApiService {
     if (index === -1) throw new Error(`Dispatch with ID '${id}' not found.`);
 
     const currentRecord = list[index];
+    AuthService.assertTenantAccess(currentRecord.companyId, AuthService.getCurrentUser());
+
     const updated = {
       ...currentRecord,
       ...updatedFields,
+      id: currentRecord.id,
+      companyId: currentRecord.companyId, // Protect tenant identity
       updatedAt: new Date().toISOString()
     };
 
@@ -140,6 +154,8 @@ export class DispatchApiService {
     if (index === -1) throw new Error(`Dispatch with ID '${id}' not found.`);
 
     const current = list[index];
+    AuthService.assertTenantAccess(current.companyId, AuthService.getCurrentUser());
+
     current.status = 'Cancelled';
     current.updatedAt = new Date().toISOString();
 

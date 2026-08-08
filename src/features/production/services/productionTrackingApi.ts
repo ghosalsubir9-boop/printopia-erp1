@@ -9,6 +9,7 @@ import { MachineApiService } from '../../machines/services/api';
 import { MachineMasterItem } from '../../machines/types';
 import { PaperIssueApiService } from './paperIssueApi';
 import { PlateIssueApiService } from './plateIssueApi';
+import { AuthService } from '../../../services/authService';
 
 export interface EnrichedJobItem extends JobItem {
   poId: string;
@@ -154,8 +155,10 @@ export class ProductionTrackingApiService {
     jobId: string,
     updates: Partial<JobItem>,
     remarks?: string,
-    user: string = 'subir.ghosal'
+    user?: string
   ): Promise<EnrichedJobItem> {
+    const currentUser = AuthService.getCurrentUser();
+    const activeUser = user || currentUser?.userName || 'System';
     const orders = await ProductionApiService.getOrders();
     let targetOrder: ProductionOrder | null = null;
     let targetJobIndex = -1;
@@ -173,6 +176,9 @@ export class ProductionTrackingApiService {
       throw new Error(`Job Item with ID '${jobId}' was not found in any Production Order.`);
     }
 
+    // Verify tenant isolation during modification
+    AuthService.assertTenantAccess(targetOrder.companyId, currentUser);
+
     const currentJob = targetOrder.items[targetJobIndex];
     const oldStatus = currentJob.status || 'Planning';
     const newStatus = updates.status || oldStatus;
@@ -188,7 +194,7 @@ export class ProductionTrackingApiService {
         id: `evt-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
         date: dateStr,
         time: timeStr,
-        user,
+        user: activeUser,
         oldStatus,
         newStatus,
         remarks: remarks || `Status changed from ${oldStatus} to ${newStatus}.`
@@ -226,7 +232,7 @@ export class ProductionTrackingApiService {
     jobId: string,
     machineId: string,
     machineName: string,
-    user: string = 'subir.ghosal'
+    user?: string
   ): Promise<EnrichedJobItem> {
     const jobs = await this.getJobs();
     const targetJob = jobs.find(j => j.id === jobId);

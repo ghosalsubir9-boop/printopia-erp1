@@ -4,6 +4,7 @@
  */
 
 import { PaperIssueSlip, PISStatus } from '../types';
+import { AuthService } from '../../../services/authService';
 
 const STORAGE_KEY = 'printopia_paper_issue_slips';
 
@@ -34,7 +35,11 @@ export class PaperIssueApiService {
     poNumber?: string;
   }): Promise<PaperIssueSlip[]> {
     await delay(200);
+    const companyId = AuthService.requireCurrentCompanyId();
     let list = this.getStoredSlips();
+
+    // Enforce Tenant Isolation
+    list = list.filter(item => item.companyId === companyId);
 
     if (filters) {
       const { searchTerm, status, poNumber } = filters;
@@ -62,15 +67,24 @@ export class PaperIssueApiService {
   public static async getSlipById(id: string): Promise<PaperIssueSlip | null> {
     await delay(100);
     const list = this.getStoredSlips();
-    return list.find(item => item.id === id) || null;
+    const item = list.find(item => item.id === id) || null;
+    if (item) {
+      AuthService.assertTenantAccess(item.companyId, AuthService.getCurrentUser());
+    }
+    return item;
   }
 
   public static async getSlipsForJobItem(poId: string, jobItemId: string): Promise<PaperIssueSlip[]> {
     await delay(100);
+    const companyId = AuthService.requireCurrentCompanyId();
     const list = this.getStoredSlips();
-    // Only count active slips (non-Cancelled, and non-Draft if we count actual issues)
-    // Wait, let's include active/issued slips.
-    return list.filter(item => item.poId === poId && item.jobItemId === jobItemId && item.status !== 'Cancelled');
+    // Filter by companyId and job details
+    return list.filter(item => 
+      item.companyId === companyId &&
+      item.poId === poId && 
+      item.jobItemId === jobItemId && 
+      item.status !== 'Cancelled'
+    );
   }
 
   /**
@@ -82,13 +96,15 @@ export class PaperIssueApiService {
     return activeSlips.reduce((sum, s) => sum + s.currentIssueQuantity, 0);
   }
 
-  public static async createSlip(slip: Omit<PaperIssueSlip, 'id' | 'issueNumber' | 'createdAt' | 'updatedAt'>): Promise<PaperIssueSlip> {
+  public static async createSlip(slip: Omit<PaperIssueSlip, 'id' | 'companyId' | 'issueNumber' | 'createdAt' | 'updatedAt'>): Promise<PaperIssueSlip> {
     await delay(300);
+    const companyId = AuthService.requireCurrentCompanyId();
+    const currentUser = AuthService.getCurrentUser();
     const list = this.getStoredSlips();
 
     // Generate PIS Number: PIS-YYYY-NNNN
     const currentYear = new Date().getFullYear();
-    const sameYearSlips = list.filter(s => s.issueNumber.startsWith(`PIS-${currentYear}-`));
+    const sameYearSlips = list.filter(s => s.companyId === companyId && s.issueNumber.startsWith(`PIS-${currentYear}-`));
     
     let nextSeq = 1;
     if (sameYearSlips.length > 0) {
@@ -105,6 +121,8 @@ export class PaperIssueApiService {
 
     const newSlip: PaperIssueSlip = {
       ...slip,
+      companyId,
+      issuedBy: currentUser?.userName || slip.issuedBy || 'System',
       id,
       issueNumber,
       createdAt: timestamp,
@@ -123,9 +141,14 @@ export class PaperIssueApiService {
 
     if (index === -1) throw new Error(`Paper Issue Slip with ID '${id}' not found.`);
 
+    const existing = list[index];
+    AuthService.assertTenantAccess(existing.companyId, AuthService.getCurrentUser());
+
     const updatedSlip = {
-      ...list[index],
+      ...existing,
       ...updatedFields,
+      id: existing.id,
+      companyId: existing.companyId, // Protect tenant identity
       updatedAt: new Date().toISOString()
     };
 

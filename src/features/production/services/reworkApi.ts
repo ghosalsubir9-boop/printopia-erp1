@@ -5,6 +5,7 @@
 
 import { ReworkTask, ReworkStatus, ProductionStage } from '../types';
 import { ProductionTrackingApiService } from './productionTrackingApi';
+import { AuthService } from '../../../services/authService';
 
 const STORAGE_KEY = 'printopia_rework_tasks';
 
@@ -31,30 +32,39 @@ export class ReworkApiService {
 
   public static async getReworkTasks(): Promise<ReworkTask[]> {
     await delay(200);
-    return this.getStoredTasks().sort((a, b) => b.reworkTaskNumber.localeCompare(a.reworkTaskNumber));
+    const companyId = AuthService.requireCurrentCompanyId();
+    const list = this.getStoredTasks().filter(item => item.companyId === companyId);
+    return list.sort((a, b) => b.reworkTaskNumber.localeCompare(a.reworkTaskNumber));
   }
 
   public static async getReworkTasksForJobItem(poId: string, jobItemId: string): Promise<ReworkTask[]> {
     await delay(100);
+    const companyId = AuthService.requireCurrentCompanyId();
     const list = this.getStoredTasks();
-    return list.filter(item => item.poId === poId && item.jobItemId === jobItemId);
+    return list.filter(item => item.companyId === companyId && item.poId === poId && item.jobItemId === jobItemId);
   }
 
   public static async getReworkTaskById(id: string): Promise<ReworkTask | null> {
     await delay(100);
     const list = this.getStoredTasks();
-    return list.find(item => item.id === id) || null;
+    const item = list.find(item => item.id === id) || null;
+    if (item) {
+      AuthService.assertTenantAccess(item.companyId, AuthService.getCurrentUser());
+    }
+    return item;
   }
 
   public static async createReworkTask(
-    task: Omit<ReworkTask, 'id' | 'reworkTaskNumber' | 'createdAt' | 'updatedAt'>
+    task: Omit<ReworkTask, 'id' | 'companyId' | 'reworkTaskNumber' | 'createdAt' | 'updatedAt'>
   ): Promise<ReworkTask> {
     await delay(300);
+    const companyId = AuthService.requireCurrentCompanyId();
+    const currentUser = AuthService.getCurrentUser();
     const list = this.getStoredTasks();
 
     // Auto Rework Task Number: RWK-YYYY-NNNN
     const currentYear = new Date().getFullYear();
-    const sameYear = list.filter(o => o.reworkTaskNumber.startsWith(`RWK-${currentYear}-`));
+    const sameYear = list.filter(o => o.companyId === companyId && o.reworkTaskNumber.startsWith(`RWK-${currentYear}-`));
     
     let nextSeq = 1;
     if (sameYear.length > 0) {
@@ -71,6 +81,8 @@ export class ReworkApiService {
 
     const newReworkTask: ReworkTask = {
       ...task,
+      companyId,
+      assignedUser: currentUser?.userName || task.assignedUser || 'System',
       id,
       reworkTaskNumber,
       createdAt: timestamp,
@@ -103,9 +115,13 @@ export class ReworkApiService {
     if (index === -1) throw new Error(`Rework Task with ID '${id}' not found.`);
 
     const originalTask = list[index];
+    AuthService.assertTenantAccess(originalTask.companyId, AuthService.getCurrentUser());
+
     const updated = {
       ...originalTask,
       ...updatedFields,
+      id: originalTask.id,
+      companyId: originalTask.companyId, // Protect tenant identity
       updatedAt: new Date().toISOString()
     };
 

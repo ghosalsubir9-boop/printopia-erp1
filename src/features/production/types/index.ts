@@ -160,6 +160,7 @@ export type PISStatus = 'Draft' | 'Partially Issued' | 'Fully Issued' | 'Cancell
 
 export interface PaperIssueSlip {
   id: string;
+  companyId: string;
   issueNumber: string; // PIS-YYYY-NNNN
   issueDate: string; // YYYY-MM-DD
   poId: string;
@@ -190,6 +191,7 @@ export type PLSStatus = 'Draft' | 'Partially Issued' | 'Fully Issued' | 'Cancell
 
 export interface PlateIssueSlip {
   id: string;
+  companyId: string;
   issueNumber: string; // PLS-YYYY-NNNN
   issueDate: string; // YYYY-MM-DD
   poId: string;
@@ -234,6 +236,7 @@ export type QCStatus =
 
 export interface QCInspection {
   id: string;
+  companyId: string;
   qcNumber: string; // QC-YYYY-NNNN or QC-NNNNN
   qcDate: string; // YYYY-MM-DD
   poId: string;
@@ -259,6 +262,7 @@ export type ReworkStatus = 'Open' | 'In Progress' | 'Completed' | 'Cancelled';
 
 export interface ReworkTask {
   id: string;
+  companyId: string;
   reworkTaskNumber: string; // RWK-YYYY-NNNN or RWK-NNNNN
   sourceQCId?: string;
   sourceQCNumber?: string;
@@ -294,6 +298,7 @@ export type DispatchStatus =
 
 export interface DispatchRecord {
   id: string;
+  companyId: string;
   dispatchNumber: string;
   dispatchDate: string;
   productionOrderId: string;
@@ -346,6 +351,7 @@ export interface DeliveryConfirmation {
 
 export interface DeliveryChallan {
   id: string;
+  companyId: string;
   challanNumber: string;
   challanDate: string;
   customerId: string;

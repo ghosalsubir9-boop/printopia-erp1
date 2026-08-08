@@ -5,6 +5,7 @@
 
 import { DeliveryChallan, DeliveryConfirmation, DeliveryStatus } from '../types';
 import { DispatchApiService } from './dispatchApi';
+import { AuthService } from '../../../services/authService';
 
 const STORAGE_KEY = 'printopia_delivery_challans';
 
@@ -30,24 +31,31 @@ export class DeliveryChallanApiService {
 
   public static async getChallans(): Promise<DeliveryChallan[]> {
     await delay(200);
-    return this.getStoredChallans().sort((a, b) => b.challanNumber.localeCompare(a.challanNumber));
+    const companyId = AuthService.requireCurrentCompanyId();
+    const list = this.getStoredChallans().filter(item => item.companyId === companyId);
+    return list.sort((a, b) => b.challanNumber.localeCompare(a.challanNumber));
   }
 
   public static async getChallanById(id: string): Promise<DeliveryChallan | null> {
     await delay(100);
     const list = this.getStoredChallans();
-    return list.find(item => item.id === id) || null;
+    const item = list.find(item => item.id === id) || null;
+    if (item) {
+      AuthService.assertTenantAccess(item.companyId, AuthService.getCurrentUser());
+    }
+    return item;
   }
 
   public static async createChallan(
-    challan: Omit<DeliveryChallan, 'id' | 'challanNumber' | 'createdAt' | 'updatedAt' | 'status'>
+    challan: Omit<DeliveryChallan, 'id' | 'companyId' | 'challanNumber' | 'createdAt' | 'updatedAt' | 'status'>
   ): Promise<DeliveryChallan> {
     await delay(300);
+    const companyId = AuthService.requireCurrentCompanyId();
     const list = this.getStoredChallans();
 
     // Auto Challan Number: CHAL-YYYY-NNNN
     const currentYear = new Date().getFullYear();
-    const sameYear = list.filter(o => o.challanNumber.startsWith(`CHAL-${currentYear}-`));
+    const sameYear = list.filter(o => o.companyId === companyId && o.challanNumber.startsWith(`CHAL-${currentYear}-`));
     
     let nextSeq = 1;
     if (sameYear.length > 0) {
@@ -64,6 +72,7 @@ export class DeliveryChallanApiService {
 
     const newChallan: DeliveryChallan = {
       ...challan,
+      companyId,
       id,
       challanNumber,
       status: 'Pending',
@@ -84,9 +93,14 @@ export class DeliveryChallanApiService {
 
     if (index === -1) throw new Error(`Delivery Challan with ID '${id}' not found.`);
 
+    const existing = list[index];
+    AuthService.assertTenantAccess(existing.companyId, AuthService.getCurrentUser());
+
     const updated = {
-      ...list[index],
+      ...existing,
       ...updatedFields,
+      id: existing.id,
+      companyId: existing.companyId, // Protect tenant identity
       updatedAt: new Date().toISOString()
     };
 
@@ -103,6 +117,7 @@ export class DeliveryChallanApiService {
     if (index === -1) throw new Error(`Delivery Challan with ID '${id}' not found.`);
 
     const currentChallan = list[index];
+    AuthService.assertTenantAccess(currentChallan.companyId, AuthService.getCurrentUser());
 
     // Business Rule check: Delivered Quantity cannot exceed Dispatched Quantity
     if (confirmation.deliveredQuantity !== undefined && confirmation.deliveredQuantity > currentChallan.dispatchQuantity) {

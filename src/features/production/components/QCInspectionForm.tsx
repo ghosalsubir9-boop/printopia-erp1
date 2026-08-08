@@ -33,6 +33,7 @@ import { ProductionApiService } from '../services/api';
 import { ProductionTrackingApiService, EnrichedJobItem } from '../services/productionTrackingApi';
 import { QCApiService } from '../services/qcApi';
 import { ReworkApiService } from '../services/reworkApi';
+import { AuthService } from '../../../services/authService';
 
 interface QCInspectionFormProps {
   preselectedJob?: EnrichedJobItem | null;
@@ -69,7 +70,7 @@ export default function QCInspectionForm({ preselectedJob, onSave, onCancel }: Q
   const [rejectedQty, setRejectedQty] = useState<number>(0);
   const [reworkQty, setReworkQty] = useState<number>(0);
   const [qcStatus, setQcStatus] = useState<QCStatus>('Pending');
-  const [qcBy, setQcBy] = useState<string>('subir.ghosal');
+  const [qcBy, setQcBy] = useState<string>(AuthService.getCurrentUser()?.userName || 'System');
   const [remarks, setRemarks] = useState<string>('');
 
   // QC Checklist State

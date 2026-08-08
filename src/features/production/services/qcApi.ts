@@ -5,6 +5,7 @@
 
 import { QCInspection, QCChecklistItem, ProductionStage, JobItem } from '../types';
 import { ProductionTrackingApiService } from './productionTrackingApi';
+import { AuthService } from '../../../services/authService';
 
 const STORAGE_KEY = 'printopia_qc_inspections';
 
@@ -31,30 +32,39 @@ export class QCApiService {
 
   public static async getInspections(): Promise<QCInspection[]> {
     await delay(200);
-    return this.getStoredInspections().sort((a, b) => b.qcNumber.localeCompare(a.qcNumber));
+    const companyId = AuthService.requireCurrentCompanyId();
+    const list = this.getStoredInspections().filter(item => item.companyId === companyId);
+    return list.sort((a, b) => b.qcNumber.localeCompare(a.qcNumber));
   }
 
   public static async getInspectionsForJobItem(poId: string, jobItemId: string): Promise<QCInspection[]> {
     await delay(100);
+    const companyId = AuthService.requireCurrentCompanyId();
     const list = this.getStoredInspections();
-    return list.filter(item => item.poId === poId && item.jobItemId === jobItemId);
+    return list.filter(item => item.companyId === companyId && item.poId === poId && item.jobItemId === jobItemId);
   }
 
   public static async getInspectionById(id: string): Promise<QCInspection | null> {
     await delay(100);
     const list = this.getStoredInspections();
-    return list.find(item => item.id === id) || null;
+    const item = list.find(item => item.id === id) || null;
+    if (item) {
+      AuthService.assertTenantAccess(item.companyId, AuthService.getCurrentUser());
+    }
+    return item;
   }
 
   public static async createInspection(
-    inspection: Omit<QCInspection, 'id' | 'qcNumber' | 'createdAt' | 'updatedAt'>
+    inspection: Omit<QCInspection, 'id' | 'companyId' | 'qcNumber' | 'createdAt' | 'updatedAt'>
   ): Promise<QCInspection> {
     await delay(300);
+    const companyId = AuthService.requireCurrentCompanyId();
+    const currentUser = AuthService.getCurrentUser();
     const list = this.getStoredInspections();
 
     // Auto QC Number: QC-YYYY-NNNN
     const currentYear = new Date().getFullYear();
-    const sameYear = list.filter(o => o.qcNumber.startsWith(`QC-${currentYear}-`));
+    const sameYear = list.filter(o => o.companyId === companyId && o.qcNumber.startsWith(`QC-${currentYear}-`));
     
     let nextSeq = 1;
     if (sameYear.length > 0) {
@@ -71,6 +81,8 @@ export class QCApiService {
 
     const newInspection: QCInspection = {
       ...inspection,
+      companyId,
+      qcBy: currentUser?.userName || inspection.qcBy || 'System',
       id,
       qcNumber,
       createdAt: timestamp,
@@ -119,9 +131,14 @@ export class QCApiService {
 
     if (index === -1) throw new Error(`QC Inspection with ID '${id}' not found.`);
 
+    const existing = list[index];
+    AuthService.assertTenantAccess(existing.companyId, AuthService.getCurrentUser());
+
     const updated = {
-      ...list[index],
+      ...existing,
       ...updatedFields,
+      id: existing.id,
+      companyId: existing.companyId, // Protect tenant identity
       updatedAt: new Date().toISOString()
     };
 

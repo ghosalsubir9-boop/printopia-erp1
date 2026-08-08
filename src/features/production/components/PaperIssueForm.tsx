@@ -213,7 +213,7 @@ export default function PaperIssueForm({
         ? selectedPO.items.findIndex((item) => item.id === jobItemId) + 1
         : 1;
 
-      const slipData: Omit<PaperIssueSlip, 'id' | 'issueNumber' | 'createdAt' | 'updatedAt'> = {
+      const slipData: Omit<PaperIssueSlip, 'id' | 'companyId' | 'issueNumber' | 'createdAt' | 'updatedAt'> = {
         issueDate,
         poId,
         poNumber: selectedPO?.poNumber || '',

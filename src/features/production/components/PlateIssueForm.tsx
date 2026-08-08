@@ -283,7 +283,7 @@ export default function PlateIssueForm({
         ? selectedPO.items.findIndex((item) => item.id === jobItemId) + 1
         : 1;
 
-      const slipData: Omit<PlateIssueSlip, 'id' | 'issueNumber' | 'createdAt' | 'updatedAt'> = {
+      const slipData: Omit<PlateIssueSlip, 'id' | 'companyId' | 'issueNumber' | 'createdAt' | 'updatedAt'> = {
         issueDate,
         poId,
         poNumber: selectedPO?.poNumber || '',

@@ -4,6 +4,7 @@
  */
 
 import { PlateIssueSlip, PLSStatus } from '../types';
+import { AuthService } from '../../../services/authService';
 
 const STORAGE_KEY = 'printopia_plate_issue_slips';
 
@@ -34,7 +35,11 @@ export class PlateIssueApiService {
     poNumber?: string;
   }): Promise<PlateIssueSlip[]> {
     await delay(200);
+    const companyId = AuthService.requireCurrentCompanyId();
     let list = this.getStoredSlips();
+
+    // Enforce Tenant Isolation
+    list = list.filter(item => item.companyId === companyId);
 
     if (filters) {
       const { searchTerm, status, poNumber } = filters;
@@ -62,13 +67,23 @@ export class PlateIssueApiService {
   public static async getSlipById(id: string): Promise<PlateIssueSlip | null> {
     await delay(100);
     const list = this.getStoredSlips();
-    return list.find(item => item.id === id) || null;
+    const item = list.find(item => item.id === id) || null;
+    if (item) {
+      AuthService.assertTenantAccess(item.companyId, AuthService.getCurrentUser());
+    }
+    return item;
   }
 
   public static async getSlipsForJobItem(poId: string, jobItemId: string): Promise<PlateIssueSlip[]> {
     await delay(100);
+    const companyId = AuthService.requireCurrentCompanyId();
     const list = this.getStoredSlips();
-    return list.filter(item => item.poId === poId && item.jobItemId === jobItemId && item.status !== 'Cancelled');
+    return list.filter(item => 
+      item.companyId === companyId &&
+      item.poId === poId && 
+      item.jobItemId === jobItemId && 
+      item.status !== 'Cancelled'
+    );
   }
 
   /**
@@ -80,13 +95,15 @@ export class PlateIssueApiService {
     return activeSlips.reduce((sum, s) => sum + s.currentIssueQuantity, 0);
   }
 
-  public static async createSlip(slip: Omit<PlateIssueSlip, 'id' | 'issueNumber' | 'createdAt' | 'updatedAt'>): Promise<PlateIssueSlip> {
+  public static async createSlip(slip: Omit<PlateIssueSlip, 'id' | 'companyId' | 'issueNumber' | 'createdAt' | 'updatedAt'>): Promise<PlateIssueSlip> {
     await delay(300);
+    const companyId = AuthService.requireCurrentCompanyId();
+    const currentUser = AuthService.getCurrentUser();
     const list = this.getStoredSlips();
 
     // Generate PLS Number: PLS-YYYY-NNNN
     const currentYear = new Date().getFullYear();
-    const sameYearSlips = list.filter(s => s.issueNumber.startsWith(`PLS-${currentYear}-`));
+    const sameYearSlips = list.filter(s => s.companyId === companyId && s.issueNumber.startsWith(`PLS-${currentYear}-`));
     
     let nextSeq = 1;
     if (sameYearSlips.length > 0) {
@@ -103,6 +120,8 @@ export class PlateIssueApiService {
 
     const newSlip: PlateIssueSlip = {
       ...slip,
+      companyId,
+      issuedBy: currentUser?.userName || slip.issuedBy || 'System',
       id,
       issueNumber,
       createdAt: timestamp,
@@ -121,9 +140,14 @@ export class PlateIssueApiService {
 
     if (index === -1) throw new Error(`Plate Issue Slip with ID '${id}' not found.`);
 
+    const existing = list[index];
+    AuthService.assertTenantAccess(existing.companyId, AuthService.getCurrentUser());
+
     const updatedSlip = {
-      ...list[index],
+      ...existing,
       ...updatedFields,
+      id: existing.id,
+      companyId: existing.companyId, // Protect tenant identity
       updatedAt: new Date().toISOString()
     };
 
