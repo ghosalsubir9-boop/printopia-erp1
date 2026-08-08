@@ -22,6 +22,8 @@ import { MachineApiService } from './features/machines/services/api';
 import { EstimateApiService } from './features/estimate/job-entry/services/api';
 import { QuotationApiService } from './features/quotation/services/api';
 import { PIApiService } from './features/proforma-invoice/services/api';
+import { ProductionApiService } from './features/production/services/api';
+import { JobCardApiService } from './features/production/services/jobCardApi';
 
 async function runTests() {
   console.log('=== STARTING PRINTOPIA AUTH & INTEGRITY TEST SUITE ===\n');
@@ -615,6 +617,354 @@ async function runTests() {
   } catch (e: any) {
     assert(true, 'Verify: deleteDocument on cross-tenant record is blocked.');
   }
+
+  // ==========================================
+  // MODULE-08: PRODUCTION ORDER + JOB CARD TESTS
+  // ==========================================
+  
+  // Restore company-1 login context
+  AuthService.createSession({
+    userId: 'user-777',
+    userName: 'Tester John',
+    email: 'tester@company1.com',
+    role: 'COMPANY_ADMIN',
+    companyId: 'company-1',
+    companyName: 'Company 1'
+  });
+
+  // Create an approved, production-ready PI under company-1
+  const prodPI = await PIApiService.saveInvoice({
+    date: '2026-08-08',
+    customerId: xyzCust.id,
+    customerName: xyzCust.companyName,
+    status: 'Production Approved',
+    productionApproved: true, // explicit approval!
+    items: [
+      {
+        id: 'pi-item-mod8-1',
+        productName: 'OPD File Folder Premium',
+        quantity: 1200,
+        rate: 5,
+        unitRate: 5,
+        unit: 'Pcs',
+        specification: '',
+        discountPercent: 0,
+        discountAmount: 0,
+        taxableAmount: 6000,
+        amount: 6000,
+        gstRate: 18,
+        cgst: 540,
+        sgst: 540,
+        igst: 0,
+        lineTotal: 7080,
+        quotationOptionId: 'opt-mod8-1',
+        quotationItemId: 'item-mod8-1'
+      }
+    ],
+    subtotal: 6000,
+    taxableAmount: 6000,
+    cgst: 540,
+    sgst: 540,
+    igst: 0,
+    roundOff: 0,
+    grandTotal: 7080,
+    quotationId: 'qtn-mod8-1',
+    quotationNumber: 'QTN/26-27/0002',
+    advanceType: 'No Advance',
+    advanceValue: 0,
+    advanceRequiredAmount: 0,
+    totalReceived: 0,
+    balanceDue: 7080,
+    advanceAmount: 0,
+    balanceAmount: 7080,
+    payments: [],
+    timeline: [],
+    terms: [],
+    convertedOptionIds: []
+  });
+
+  // 1. Prepare and Create Production Order
+  const poDraft = await ProductionApiService.prepareFromPI(prodPI);
+  const po = await ProductionApiService.createOrder(poDraft);
+  assert(po !== null && po.id !== undefined, 'Verify: Create Production Order from valid approved PI.');
+
+  // 2. PO Sequential FY Numbering e.g. PO/2026-27/0001
+  assert(po.poNumber.startsWith('PO/2026-27/'), `Verify: PO Number is sequentially generated with FY format (got: ${po.poNumber}).`);
+
+  // 3. Block creation if PI is not production-approved or is cancelled
+  try {
+    const unapprovedPI = await PIApiService.saveInvoice({
+      ...prodPI,
+      id: 'pi-unapproved-id',
+      status: 'Draft',
+      productionApproved: false
+    });
+    const badDraft = await ProductionApiService.prepareFromPI(unapprovedPI);
+    await ProductionApiService.createOrder(badDraft);
+    assert(false, 'Should block PO creation from unapproved PI.');
+  } catch (e: any) {
+    assert(e.message.includes('explicit Production Approval'), `Verify: Block creation if PI is not production-approved.`);
+  }
+
+  try {
+    const cancelledPI = await PIApiService.saveInvoice({
+      ...prodPI,
+      id: 'pi-cancelled-id',
+      status: 'Cancelled',
+      productionApproved: true
+    });
+    const badDraft = await ProductionApiService.prepareFromPI(cancelledPI);
+    await ProductionApiService.createOrder(badDraft);
+    assert(false, 'Should block PO creation from Cancelled PI.');
+  } catch (e: any) {
+    assert(e.message.includes('Cancelled'), `Verify: Block creation if PI is Cancelled.`);
+  }
+
+  // 4. Tenant isolation for Production Order
+  // Switch to company-2
+  AuthService.createSession({
+    userId: 'user-c2',
+    userName: 'Company 2 Admin',
+    email: 'admin2@company2.com',
+    role: 'COMPANY_ADMIN',
+    companyId: 'company-2',
+    companyName: 'Company 2'
+  });
+
+  // Verify company-2 cannot see company-1's PO
+  const company2POs = await ProductionApiService.getOrders();
+  assert(!company2POs.some(o => o.id === po.id), 'Verify: company-2 user cannot list company-1 PO.');
+
+  try {
+    await ProductionApiService.getOrderById(po.id);
+    assert(false, 'Should block company-2 from fetching company-1 PO by ID.');
+  } catch (e: any) {
+    assert(true, 'Verify: company-2 user cannot fetch company-1 PO by ID.');
+  }
+
+  // Restore company-1
+  AuthService.createSession({
+    userId: 'user-777',
+    userName: 'Tester John',
+    email: 'tester@company1.com',
+    role: 'COMPANY_ADMIN',
+    companyId: 'company-1',
+    companyName: 'Company 1'
+  });
+
+  // 5. Update protection
+  const updatedPo = await ProductionApiService.updateOrder(po.id, {
+    companyId: 'company-2', // attempt malicious ownership transfer
+    priority: 'Urgent'
+  });
+  assert(updatedPo.companyId === 'company-1', 'Verify: PO update ignores caller-supplied companyId override.');
+  assert(updatedPo.priority === 'Urgent', 'Verify: PO non-security fields are updated correctly.');
+
+  // 6. Duplicate prevention on PO (all items already converted)
+  try {
+    const duplicateDraft = await ProductionApiService.prepareFromPI(prodPI);
+    await ProductionApiService.createOrder(duplicateDraft);
+    assert(false, 'Should block duplicate PO from already converted PI.');
+  } catch (e: any) {
+    assert(e.message.includes('already been converted'), 'Verify: Duplicate PO creation is prevented when all items are converted.');
+  }
+
+  // 7. Job Card Creation (Only allowed when PO is Approved)
+  try {
+    await JobCardApiService.createJobCard({
+      poId: po.id,
+      poNumber: po.poNumber,
+      piNo: po.piNumber,
+      quotationNo: po.quotationNumber || 'N/A',
+      customerName: po.customerName,
+      customerCode: 'CUST-XYZ',
+      salesExecutive: po.salesExecutive,
+      priority: 'Normal',
+      expectedDeliveryDate: po.deliveryDate,
+      items: po.items.map(i => ({
+        jobItemId: i.id,
+        productId: i.productId || 'N/A',
+        productName: i.productName,
+        productCode: 'PROD-1',
+        specification: '',
+        quantity: i.quantity,
+        paper: i.paperType || 'N/A',
+        gsm: i.gsm || 0,
+        sheetSize: 'N/A',
+        suggestedUps: 1,
+        selectedUps: 1,
+        printingSide: i.printingSide || 'Single Side',
+        colour: i.colour || '4 Colour',
+        machine: i.finalMachine || 'N/A',
+        plate: 'N/A',
+        cutting: 'N/A',
+        binding: 'N/A',
+        lamination: 'N/A',
+        specialProcess: 'N/A',
+        remarks: '',
+        printingDirection: 'N/A',
+        frontColour: 'N/A',
+        backColour: 'N/A',
+        colourSequence: 'N/A',
+        specialNotes: '',
+        status: 'Created'
+      })) as any[],
+      artwork: {
+        artworkStatus: 'Production Ready',
+        designer: 'System',
+        artworkVersion: '1.0',
+        versionHistory: []
+      }
+    });
+    assert(false, 'Should block Job Card creation for non-Approved PO.');
+  } catch (e: any) {
+    assert(e.message.includes('must be Approved'), 'Verify: Job Card creation is blocked if PO is not Approved.');
+  }
+
+  // Approve the PO
+  const approvedPO = await ProductionApiService.updateOrder(po.id, { status: 'Approved' });
+
+  // Create valid Job Card
+  const jc = await JobCardApiService.createJobCard({
+    poId: approvedPO.id,
+    poNumber: approvedPO.poNumber,
+    piNo: approvedPO.piNumber,
+    quotationNo: approvedPO.quotationNumber || 'N/A',
+    customerName: approvedPO.customerName,
+    customerCode: 'CUST-XYZ',
+    salesExecutive: approvedPO.salesExecutive,
+    priority: 'Normal',
+    expectedDeliveryDate: approvedPO.deliveryDate,
+    items: approvedPO.items.map(i => ({
+      jobItemId: i.id,
+      productId: i.productId || 'N/A',
+      productName: i.productName,
+      productCode: 'PROD-1',
+      specification: '',
+      quantity: i.quantity,
+      paper: i.paperType || 'N/A',
+      gsm: i.gsm || 0,
+      sheetSize: 'N/A',
+      suggestedUps: 1,
+      selectedUps: 1,
+      printingSide: i.printingSide || 'Single Side',
+      colour: i.colour || '4 Colour',
+      machine: i.finalMachine || 'N/A',
+      plate: 'N/A',
+      cutting: 'N/A',
+      binding: 'N/A',
+      lamination: 'N/A',
+      specialProcess: 'N/A',
+      remarks: '',
+      printingDirection: 'N/A',
+      frontColour: 'N/A',
+      backColour: 'N/A',
+      colourSequence: 'N/A',
+      specialNotes: '',
+      status: 'Created'
+    })) as any[],
+    artwork: {
+      artworkStatus: 'Production Ready',
+      designer: 'System',
+      artworkVersion: '1.0',
+      versionHistory: []
+    }
+  });
+  assert(jc !== null && jc.id !== undefined, 'Verify: Create Job Card from Approved PO.');
+
+  // 8. JC Sequential FY Numbering e.g. JC/2026-27/0001
+  assert(jc.jobCardNumber.startsWith('JC/2026-27/'), `Verify: Job Card Number is sequentially generated with FY format (got: ${jc.jobCardNumber}).`);
+
+  // 9. Block duplicate Job Card for same PO
+  try {
+    await JobCardApiService.createJobCard({
+      poId: approvedPO.id,
+      poNumber: approvedPO.poNumber,
+      piNo: approvedPO.piNumber,
+      quotationNo: approvedPO.quotationNumber || 'N/A',
+      customerName: approvedPO.customerName,
+      customerCode: 'CUST-XYZ',
+      salesExecutive: approvedPO.salesExecutive,
+      priority: 'Normal',
+      expectedDeliveryDate: approvedPO.deliveryDate,
+      items: approvedPO.items.map(i => ({
+        jobItemId: i.id,
+        productId: i.productId || 'N/A',
+        productName: i.productName,
+        productCode: 'PROD-1',
+        specification: '',
+        quantity: i.quantity,
+        paper: i.paperType || 'N/A',
+        gsm: i.gsm || 0,
+        sheetSize: 'N/A',
+        suggestedUps: 1,
+        selectedUps: 1,
+        printingSide: i.printingSide || 'Single Side',
+        colour: i.colour || '4 Colour',
+        machine: i.finalMachine || 'N/A',
+        plate: 'N/A',
+        cutting: 'N/A',
+        binding: 'N/A',
+        lamination: 'N/A',
+        specialProcess: 'N/A',
+        remarks: '',
+        printingDirection: 'N/A',
+        frontColour: 'N/A',
+        backColour: 'N/A',
+        colourSequence: 'N/A',
+        specialNotes: '',
+        status: 'Created'
+      })) as any[],
+      artwork: {
+        artworkStatus: 'Production Ready',
+        designer: 'System',
+        artworkVersion: '1.0',
+        versionHistory: []
+      }
+    });
+    assert(false, 'Should block duplicate Job Card creation for the same PO.');
+  } catch (e: any) {
+    assert(e.message.includes('already been generated'), 'Verify: Duplicate Job Card for the same PO is blocked.');
+  }
+
+  // 10. Tenant isolation for Job Cards
+  // Switch to company-2
+  AuthService.createSession({
+    userId: 'user-c2',
+    userName: 'Company 2 Admin',
+    email: 'admin2@company2.com',
+    role: 'COMPANY_ADMIN',
+    companyId: 'company-2',
+    companyName: 'Company 2'
+  });
+
+  const company2JCs = await JobCardApiService.getJobCards();
+  assert(!company2JCs.some(j => j.id === jc.id), 'Verify: company-2 user cannot list company-1 Job Card.');
+
+  try {
+    await JobCardApiService.getJobCardById(jc.id);
+    assert(false, 'Should block company-2 from fetching company-1 Job Card by ID.');
+  } catch (e: any) {
+    assert(true, 'Verify: company-2 user cannot fetch company-1 Job Card by ID.');
+  }
+
+  // Restore company-1
+  AuthService.createSession({
+    userId: 'user-777',
+    userName: 'Tester John',
+    email: 'tester@company1.com',
+    role: 'COMPANY_ADMIN',
+    companyId: 'company-1',
+    companyName: 'Company 1'
+  });
+
+  // 11. Protect companyId on Job Card update
+  const updatedJc = await JobCardApiService.updateJobCard(jc.id, {
+    companyId: 'company-2',
+    priority: 'Urgent'
+  });
+  assert(updatedJc.companyId === 'company-1', 'Verify: Job Card update ignores caller-supplied companyId override.');
+  assert(updatedJc.priority === 'Urgent', 'Verify: Job Card non-security fields are updated correctly.');
 
   console.log('\n=== PRINTOPIA AUTH & INTEGRITY TEST RESULTS ===');
   console.log(`Passed: ${passedCount}`);

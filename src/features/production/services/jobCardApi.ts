@@ -27,6 +27,7 @@ import { QCApiService } from './qcApi';
 import { DispatchApiService } from './dispatchApi';
 import { DeliveryChallanApiService } from './deliveryChallanApi';
 import { ReworkApiService } from './reworkApi';
+import { AuthService } from '../../../services/authService';
 
 const STORAGE_KEY = 'printopia_job_cards';
 
@@ -337,7 +338,11 @@ export class DevelopmentLocalJobCardRepository {
     filterGroup?: 'Created Today' | 'Running' | 'QC Pending' | 'Dispatch Pending' | 'Completed' | 'Overdue';
   }): Promise<JobCard[]> {
     await delay(300);
+    const companyId = AuthService.requireCurrentCompanyId();
     let list = this.getStoredJobCards();
+
+    // Enforce Tenant Isolation
+    list = list.filter(item => item.companyId === companyId);
 
     // Sync all loaded job cards
     let syncedList: JobCard[] = [];
@@ -350,7 +355,11 @@ export class DevelopmentLocalJobCardRepository {
       syncedList.push(synced);
     }
     if (stateChanged) {
-      this.saveJobCards(syncedList);
+      // Re-read storage and update only matched synced items
+      const allStored = this.getStoredJobCards();
+      const syncedMap = new Map(syncedList.map(c => [c.id, c]));
+      const updatedAll = allStored.map(card => syncedMap.get(card.id) || card);
+      this.saveJobCards(updatedAll);
     }
     list = syncedList;
 
@@ -411,6 +420,7 @@ export class DevelopmentLocalJobCardRepository {
     const list = this.getStoredJobCards();
     const found = list.find(item => item.id === id) || null;
     if (found) {
+      AuthService.assertTenantAccess(found.companyId, AuthService.getCurrentUser());
       const synced = await this.syncJobCardItems(found);
       if (synced.updatedAt !== found.updatedAt) {
         const updatedList = list.map(c => c.id === id ? synced : c);
@@ -423,39 +433,55 @@ export class DevelopmentLocalJobCardRepository {
 
   public static async createJobCard(jobCardData: CreateJobCardRequest): Promise<JobCard> {
     await delay(400);
+    const companyId = AuthService.requireCurrentCompanyId();
     const list = this.getStoredJobCards();
 
+    // 1. Fetch Production Order and validate exists
     const po = await ProductionApiService.getOrderById(jobCardData.poId);
     if (!po) {
       throw new Error(`Production Order with ID '${jobCardData.poId}' not found.`);
     }
+
+    // 2. Validate tenant ownership
+    if (po.companyId !== companyId) {
+      throw new Error('Access Denied: The linked Production Order does not belong to your organization.');
+    }
+
+    // 3. Validate status is Approved
     if (po.status !== 'Approved') {
       throw new Error(`Cannot generate Job Card. Production Order '${po.poNumber}' must be Approved (current status: '${po.status}').`);
     }
 
-    const duplicate = list.find(jc => jc.poId === jobCardData.poId);
+    // 4. Duplicate protection: PO must not already have an active Job Card
+    const duplicate = list.find(jc => jc.poId === jobCardData.poId && jc.companyId === companyId && jc.status !== 'Cancelled');
     if (duplicate) {
       throw new Error(`A Job Card (${duplicate.jobCardNumber}) has already been generated for Production Order '${jobCardData.poNumber}'.`);
     }
 
-    const currentYear = new Date().getFullYear();
-    const sameYearCards = list.filter(o => o.jobCardNumber.startsWith(`JC-${currentYear}-`));
+    // 5. Generate JC Number using tenant-aware sequential FY numbering e.g. JC/2026-27/0001
+    const finYear = ProductionApiService.getFinancialYearString(new Date());
+    const prefix = `JC/${finYear}/`;
     
-    let nextSeq = 1;
-    if (sameYearCards.length > 0) {
-      const seqs = sameYearCards.map(o => {
-        const parts = o.jobCardNumber.split('-');
-        return parseInt(parts[parts.length - 1], 10);
-      });
-      nextSeq = Math.max(...seqs) + 1;
-    }
+    const tenantCards = list.filter(o => o.companyId === companyId && o.jobCardNumber.startsWith(prefix));
+    let maxSeq = 0;
+    tenantCards.forEach(o => {
+      const parts = o.jobCardNumber.split('/');
+      if (parts.length === 3) {
+        const seq = parseInt(parts[2], 10);
+        if (!isNaN(seq) && seq > maxSeq) {
+          maxSeq = seq;
+        }
+      }
+    });
 
-    const jobCardNumber = `JC-${currentYear}-${String(nextSeq).padStart(6, '0')}`;
+    const nextSeq = maxSeq + 1;
+    const jobCardNumber = `${prefix}${String(nextSeq).padStart(4, '0')}`;
     const id = `jc-${Date.now()}`;
     const timestamp = new Date().toISOString();
 
     const newJobCard: JobCard = {
       id,
+      companyId,
       jobCardNumber,
       poId: jobCardData.poId,
       poNumber: jobCardData.poNumber,
@@ -511,9 +537,16 @@ export class DevelopmentLocalJobCardRepository {
 
     if (index === -1) throw new Error(`Job Card with ID '${id}' not found.`);
 
+    const current = list[index];
+    AuthService.assertTenantAccess(current.companyId, AuthService.getCurrentUser());
+
+    // PROTECT companyId and jobCardNumber DURING UPDATE
     const updatedCard = {
-      ...list[index],
+      ...current,
       ...updatedFields,
+      id: current.id,
+      companyId: current.companyId, // protect tenant ownership
+      jobCardNumber: current.jobCardNumber, // protect JC number integrity
       updatedAt: new Date().toISOString()
     };
 

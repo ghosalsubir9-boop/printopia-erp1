@@ -6,7 +6,7 @@
 import { FileAccessoriesType } from '../../product-master/types';
 import { LayoutData } from '../../estimate/job-entry/types';
 
-export type POStatus = 'Draft' | 'Pending Approval' | 'Approved' | 'In Production' | 'QC' | 'Ready' | 'Completed' | 'Cancelled' | 'Partially Dispatched' | 'Planning';
+export type POStatus = 'Draft' | 'Ready' | 'Approved' | 'Partially Converted' | 'Fully Converted' | 'Completed' | 'Cancelled' | 'Pending Approval' | 'In Production' | 'QC' | 'Partially Dispatched' | 'Planning';
 export type POPriority = 'Normal' | 'Urgent' | 'Super Urgent';
 
 export type ProductionStage =
@@ -69,6 +69,46 @@ export interface JobItem {
   estimateId?: string;
   alreadyConverted?: boolean;
   
+  // Traceability & Planning fields for Module-08
+  companyId?: string;
+  proformaInvoiceId?: string;
+  proformaInvoiceNumber?: string;
+  proformaInvoiceItemId?: string;
+  quotationId?: string;
+  quotationNumber?: string;
+  
+  // Planning/override fields
+  suggestedParentSheet?: string;
+  finalParentSheet?: string;
+  suggestedUps?: number;
+  finalUps?: number;
+  suggestedMachine?: string;
+  finalMachine?: string;
+  suggestedPlate?: string;
+  finalPlate?: string;
+
+  // Material and physical sheets
+  netSheets?: number;
+  manualWastageSheets?: number;
+  totalSheetsRequired?: number;
+
+  // Layout and printing method
+  printingMethod?: 'Single Side' | 'Sheetwise' | 'Work & Turn' | 'Work & Tumble';
+  
+  // Plate specific
+  plateSize?: string;
+  plateCount?: number;
+  plateMethod?: string;
+  plateNotes?: string;
+
+  // Finishing Operations (Specific overrides)
+  binding?: string;
+  folding?: string;
+  lamination?: string;
+  dieCutting?: string;
+  padding?: string;
+  otherFinishing?: string;
+
   // Section C: Planning
   planning: ProductionPlanning;
 
@@ -86,23 +126,32 @@ export interface JobItem {
 
 export interface ProductionOrder {
   id: string;
-  poNumber: string; // PO-YYYY-NNNN
+  companyId: string;
+  poNumber: string; // PO/YYYY-YY/NNNN format
   poDate: string;
+  date?: string; // fallback alias
   piId: string;
   piNumber: string;
+  quotationId?: string;
+  quotationNumber?: string;
   customerId: string;
   customerName: string;
+  customerPoNumber?: string;
   salesExecutive: string;
   deliveryDate: string;
   priority: POPriority;
   remarks: string;
+  productionNotes?: string;
   status: POStatus;
   
   items: JobItem[];
   
   approvedBy?: string;
   approvedAt?: string;
-  
+  approvedByUserId?: string;
+  approvedByName?: string;
+
+  createdBy?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -498,7 +547,8 @@ export interface JobCardItem {
 
 export interface JobCard {
   id: string;
-  jobCardNumber: string; // JC-2026-000001
+  companyId: string;
+  jobCardNumber: string; // JC/2026-27/0001 format
   poId: string; // Linked Production Order
   poNumber: string;
   piNo: string;

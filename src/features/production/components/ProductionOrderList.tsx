@@ -51,7 +51,9 @@ const statusColors: Record<POStatus, "default" | "primary" | "secondary" | "erro
   'Completed': 'success',
   'Cancelled': 'error',
   'Partially Dispatched': 'info',
-  'Planning': 'default'
+  'Planning': 'default',
+  'Partially Converted': 'info',
+  'Fully Converted': 'success'
 };
 
 export default function ProductionOrderList({
