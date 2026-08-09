@@ -297,7 +297,9 @@ export type DispatchStatus =
   | 'Draft'
   | 'Confirmed'
   | 'In Transit'
+  | 'Out for Delivery'
   | 'Delivered'
+  | 'Returned'
   | 'Cancelled';
 
 export type DeliveryTrackingStatus =

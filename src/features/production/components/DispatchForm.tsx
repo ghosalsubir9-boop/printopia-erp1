@@ -96,12 +96,8 @@ export default function DispatchForm({ preselectedCustomer, preselectedJobCardId
           const approved = qcInspections.reduce((sum, q) => sum + q.approvedQuantity, 0);
 
           // Get previous dispatches
-          const dispatches = await DispatchApiService.getDispatches();
-          const totalDisp = dispatches
-            .filter(d => d.status !== 'Cancelled')
-            .flatMap(d => d.items)
-            .filter(i => i.jobCardId === id)
-            .reduce((sum, i) => sum + i.dispatchQuantity, 0);
+          const summary = await DispatchApiService.getDispatchSummary(jc.id, item.jobItemId);
+          const totalDisp = summary.totalDispatched;
 
           const pending = approved - totalDisp;
 
@@ -161,34 +157,34 @@ export default function DispatchForm({ preselectedCustomer, preselectedJobCardId
     try {
       await DispatchApiService.createDispatch({
         dispatchDate,
-        customerId: '', // Will be resolved by service if needed, but we have customerName
+        customerId: '', // Service will resolve this from Job Card
         customerName,
-        customerCode: '', // Placeholder, should be resolved from customer lookup
+        customerCode: '', // Service will resolve this from Job Card
         billingAddressSnapshot: '',
         deliveryAddressSnapshot: deliveryAddress,
         contactPersonSnapshot: contactPerson,
         phoneSnapshot: '',
         items: selectedItems.map(i => ({
-          id: `item-${Math.random().toString(36).substr(2, 9)}`,
-          dispatchId: '', // Set by backend
+          id: '', // Service will generate
+          dispatchId: '', // Service will set
           jobCardId: i.jobCardId,
           jobCardNumber: i.jobCardNumber,
           productionOrderId: i.poId,
           productionOrderNumber: i.poNumber,
           productionOrderItemId: i.jobItemId,
           jobItemId: i.jobItemId,
-          proformaInvoiceId: '',
-          quotationId: '',
-          customerId: '',
-          productId: '',
+          proformaInvoiceId: '', // Service will resolve
+          quotationId: '', // Service will resolve
+          customerId: '', // Service will resolve
+          productId: '', // Service will resolve
           productName: i.productName,
           specification: '',
-          orderedQuantity: i.approvedQty,
+          orderedQuantity: 0, // Service will resolve
           approvedQuantity: i.approvedQty,
           packedQuantity: i.approvedQty,
           previouslyDispatchedQuantity: i.previouslyDispatched,
           currentDispatchQuantity: i.currentDispatchQty,
-          remainingQuantity: i.pendingQty,
+          remainingQuantity: 0, // Service will calculate
           unit: 'Pcs',
           packingType: 'Box',
           qtyPerPack: i.currentDispatchQty,

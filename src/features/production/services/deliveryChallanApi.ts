@@ -55,9 +55,50 @@ export class DeliveryChallanApiService {
     const user = AuthService.getCurrentUser();
     if (!user) throw new Error('Authentication required.');
 
-    if (!['COMPANY_ADMIN', 'SUPER_ADMIN', 'SALES_EXECUTIVE'].includes(user.role)) {
-      throw new Error('Unauthorized: Only COMPANY_ADMIN, SUPER_ADMIN or Sales Executives can generate Delivery Challans.');
+    if (!['COMPANY_ADMIN', 'SUPER_ADMIN'].includes(user.role)) {
+      throw new Error('Unauthorized: Only COMPANY_ADMIN or SUPER_ADMIN can generate Delivery Challans.');
     }
+
+    // 1. Load and Validate all Dispatch Records
+    const validatedDispatches: any[] = [];
+    let commonCustomerId = '';
+
+    for (const dId of challan.dispatchIds) {
+      const dispatch = await DispatchApiService.getDispatchById(dId);
+      if (!dispatch) throw new Error(`Dispatch record '${dId}' not found.`);
+      if (dispatch.companyId !== companyId) throw new Error(`Access Denied for Dispatch '${dispatch.dispatchNumber}'.`);
+      
+      // Assert eligible status (must be Confirmed or equivalent)
+      const eligibleStatuses: string[] = ['Confirmed', 'In Transit', 'Out for Delivery'];
+      if (!eligibleStatuses.includes(dispatch.status)) {
+        throw new Error(`Dispatch '${dispatch.dispatchNumber}' is in status '${dispatch.status}' and cannot be added to a Delivery Challan.`);
+      }
+
+      // Assert same customer
+      if (!commonCustomerId) {
+        commonCustomerId = dispatch.customerId;
+      } else if (commonCustomerId !== dispatch.customerId) {
+        throw new Error('All Delivery Challan items must belong to the same customer.');
+      }
+
+      validatedDispatches.push(dispatch);
+    }
+
+    if (validatedDispatches.length === 0) {
+      throw new Error('At least one valid dispatch is required to create a Delivery Challan.');
+    }
+
+    // 2. Build DC Items from Authoritative Source
+    const dcItems: any[] = [];
+    validatedDispatches.forEach(d => {
+      d.items.forEach((item: any) => {
+        dcItems.push({
+          ...item,
+          dispatchId: d.id,
+          dispatchNumber: d.dispatchNumber
+        });
+      });
+    });
 
     const list = this.getStoredChallans();
 
@@ -91,31 +132,34 @@ export class DeliveryChallanApiService {
       }
     ];
 
+    // Use snapshot from first dispatch (which is validated to be the same customer)
+    const firstDisp = validatedDispatches[0];
+
     const newChallan: DeliveryChallan = {
       ...challan,
       companyId,
       id,
       challanNumber,
+      customerId: commonCustomerId,
+      customerName: firstDisp.customerName,
+      customerCode: firstDisp.customerCode,
+      billingAddressSnapshot: firstDisp.billingAddressSnapshot,
+      deliveryAddressSnapshot: firstDisp.deliveryAddressSnapshot, // Allow override if provided in payload
+      contactPersonSnapshot: firstDisp.contactPersonSnapshot,
+      phoneSnapshot: firstDisp.phoneSnapshot,
+      items: dcItems,
       status,
       trackingHistory,
       createdAt: timestamp,
       updatedAt: timestamp
     };
 
+    // 3. Link dispatches to this DC (This includes status and tenant validation)
+    await DispatchApiService.linkDeliveryChallan(challan.dispatchIds, id, challanNumber, companyId);
+
+    // 4. Save the DC only after dispatches are linked
     list.push(newChallan);
     this.saveChallans(list);
-
-    // Update Dispatches
-    const dispatches = (DispatchApiService as any).getStoredDispatches();
-    for (const dispatchId of challan.dispatchIds) {
-      const dIdx = dispatches.findIndex((d: any) => d.id === dispatchId);
-      if (dIdx !== -1) {
-        dispatches[dIdx].deliveryChallanId = id;
-        dispatches[dIdx].deliveryChallanNumber = challanNumber;
-        dispatches[dIdx].status = 'Confirmed';
-      }
-    }
-    (DispatchApiService as any).saveDispatches(dispatches);
 
     return newChallan;
   }
@@ -124,8 +168,10 @@ export class DeliveryChallanApiService {
     await delay(300);
     const user = AuthService.getCurrentUser();
     if (!user) throw new Error('Authentication required.');
+    
+    // Role Check
     if (!['COMPANY_ADMIN', 'SUPER_ADMIN'].includes(user.role)) {
-      throw new Error('Unauthorized.');
+      throw new Error('Unauthorized: Only COMPANY_ADMIN or SUPER_ADMIN can update delivery tracking.');
     }
 
     const list = this.getStoredChallans();
@@ -134,6 +180,11 @@ export class DeliveryChallanApiService {
 
     const challan = list[index];
     AuthService.assertTenantAccess(challan.companyId, user);
+
+    // Business Rule: Delivered must go through confirmDelivery
+    if (nextStatus === 'Delivered') {
+      throw new Error('Please use "Confirm Delivery" to mark a challan as Delivered and provide POD details.');
+    }
 
     const timestamp = new Date().toISOString();
     challan.status = nextStatus;
@@ -148,23 +199,11 @@ export class DeliveryChallanApiService {
     list[index] = challan;
     this.saveChallans(list);
 
-    if (nextStatus === 'Delivered') {
-      const dispatches = (DispatchApiService as any).getStoredDispatches();
-      const { JobCardApiService } = await import('./jobCardApi');
-      
+    // Sync Dispatches status if needed (e.g. In Transit)
+    if (['In Transit', 'Out for Delivery'].includes(nextStatus)) {
       for (const dId of challan.dispatchIds) {
-        const dIdx = dispatches.findIndex((d: any) => d.id === dId);
-        if (dIdx !== -1) {
-          dispatches[dIdx].status = 'Delivered';
-          for (const item of dispatches[dIdx].items) {
-             const card = await JobCardApiService.getJobCardById(item.jobCardId);
-             if (card) {
-               await JobCardApiService.syncJobCardItems(card);
-             }
-          }
-        }
+        await DispatchApiService.updateDispatchStatus(dId, nextStatus as any, challan.companyId);
       }
-      (DispatchApiService as any).saveDispatches(dispatches);
     }
 
     return challan;
@@ -174,8 +213,13 @@ export class DeliveryChallanApiService {
     await delay(300);
     const user = AuthService.getCurrentUser();
     if (!user) throw new Error('Authentication required.');
+    
     if (!['COMPANY_ADMIN', 'SUPER_ADMIN'].includes(user.role)) {
-      throw new Error('Unauthorized.');
+      throw new Error('Unauthorized: Only COMPANY_ADMIN or SUPER_ADMIN can confirm deliveries.');
+    }
+
+    if (!pod.receivedBy) {
+      throw new Error('Receiver name ("Received By") is required for delivery confirmation.');
     }
 
     const list = this.getStoredChallans();
@@ -185,10 +229,21 @@ export class DeliveryChallanApiService {
     const challan = list[index];
     AuthService.assertTenantAccess(challan.companyId, user);
 
+    if (challan.status === 'Cancelled') {
+      throw new Error('Cannot confirm delivery for a cancelled challan.');
+    }
+
     const timestamp = new Date().toISOString();
+    const deliveryTime = pod.deliveryDate || timestamp;
+
     challan.status = 'Delivered';
     challan.receivedBy = pod.receivedBy;
-    challan.pod = pod;
+    challan.pod = {
+      ...pod,
+      deliveryDate: deliveryTime,
+      receivedAt: timestamp
+    };
+    
     challan.trackingHistory.push({
       status: 'Delivered',
       dateTime: timestamp,
@@ -200,22 +255,10 @@ export class DeliveryChallanApiService {
     list[index] = challan;
     this.saveChallans(list);
 
-    const dispatches = (DispatchApiService as any).getStoredDispatches();
-    const { JobCardApiService } = await import('./jobCardApi');
-    
+    // Update all linked dispatches to Delivered
     for (const dId of challan.dispatchIds) {
-      const dIdx = dispatches.findIndex((d: any) => d.id === dId);
-      if (dIdx !== -1) {
-        dispatches[dIdx].status = 'Delivered';
-        for (const item of dispatches[dIdx].items) {
-           const card = await JobCardApiService.getJobCardById(item.jobCardId);
-           if (card) {
-             await JobCardApiService.syncJobCardItems(card);
-           }
-        }
-      }
+      await DispatchApiService.updateDispatchStatus(dId, 'Delivered', challan.companyId);
     }
-    (DispatchApiService as any).saveDispatches(dispatches);
 
     return challan;
   }

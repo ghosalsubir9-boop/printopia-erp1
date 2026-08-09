@@ -233,11 +233,11 @@ export class ProductionApiService {
     const convertedItemIds = new Set(poJobCards.map(jc => jc.productionOrderItemId));
     const allItemsConverted = order.items.every(item => convertedItemIds.has(item.id));
     
-    const allJCsDelivered = poJobCards.every(jc => jc.status === 'Delivered');
-    const anyDispatched = poJobCards.some(jc => ['Partially Dispatched', 'Dispatched', 'Delivered'].includes(jc.status));
+    const allJCsCompleted = poJobCards.every(jc => jc.status === 'Completed');
+    const anyDispatched = poJobCards.some(jc => ['Partially Dispatched', 'Dispatched', 'Delivered', 'Completed'].includes(jc.status));
 
     let newStatus = order.status;
-    if (allItemsConverted && allJCsDelivered) {
+    if (allItemsConverted && allJCsCompleted) {
       newStatus = 'Completed';
     } else if (anyDispatched) {
       newStatus = 'Partially Dispatched';

@@ -118,7 +118,7 @@ export default function DeliveryChallanForm({ preselectedCustomer, preselectedDi
         challanDate,
         customerId,
         customerName,
-        customerCode: '', // Placeholder
+        customerCode: '', // Service will resolve
         billingAddressSnapshot: billingAddress,
         deliveryAddressSnapshot: deliveryAddress,
         contactPersonSnapshot: contactPerson,
@@ -132,7 +132,7 @@ export default function DeliveryChallanForm({ preselectedCustomer, preselectedDi
         productSpecification,
         dispatchQuantity,
         numberOfPackages,
-        items: [], // Placeholder, should be resolved by service if needed
+        items: [], // Service will resolve from dispatchIds
         transportMode,
         vehicleNumber,
         lrNumber,

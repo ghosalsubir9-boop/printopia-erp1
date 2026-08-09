@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { DispatchRecord, DispatchStatus, ProductionStage } from '../types';
+import { DispatchRecord, DispatchStatus, ProductionStage, DispatchItem } from '../types';
 import { ProductionApiService } from './api';
 import { QCApiService } from './qcApi';
 import { AuthService } from '../../../services/authService';
@@ -13,6 +13,9 @@ const STORAGE_KEY = 'printopia_dispatches';
 const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 export class DispatchApiService {
+  // Shared helper for quantity-reserving statuses
+  public static readonly RESERVING_STATUSES: DispatchStatus[] = ['Confirmed', 'In Transit', 'Out for Delivery', 'Delivered', 'Returned'];
+
   private static getStoredDispatches(): DispatchRecord[] {
     const data = localStorage.getItem(STORAGE_KEY);
     if (!data) {
@@ -55,45 +58,103 @@ export class DispatchApiService {
     const user = AuthService.getCurrentUser();
     if (!user) throw new Error('Authentication required.');
 
-    // 1. Role Guard: Only COMPANY_ADMIN or authorized users
-    if (!['COMPANY_ADMIN', 'SUPER_ADMIN', 'SALES_EXECUTIVE'].includes(user.role)) {
-      throw new Error('Unauthorized: Only COMPANY_ADMIN, SUPER_ADMIN or authorized Sales Executives can prepare dispatch records.');
+    // 1. Role Guard
+    if (!['COMPANY_ADMIN', 'SUPER_ADMIN'].includes(user.role)) {
+      throw new Error('Unauthorized: Only COMPANY_ADMIN or SUPER_ADMIN can prepare dispatch records.');
     }
 
-    // 2. Validate Items
     const { JobCardApiService } = await import('./jobCardApi');
-    const jobCards = await JobCardApiService.getJobCards();
-    
+    const { CustomerMasterService } = await import('../../customer-master/services/mockApi');
+    const allStoredDispatches = this.getStoredDispatches();
+
+    const validatedItems: DispatchItem[] = [];
+
     for (const item of dispatch.items) {
-      const card = jobCards.find(c => c.id === item.jobCardId);
+      // Authoritative Job Card lookup
+      const card = await JobCardApiService.getJobCardById(item.jobCardId);
       if (!card) throw new Error(`Job Card '${item.jobCardNumber}' not found.`);
-      if (card.companyId !== companyId) throw new Error(`Access Denied for Job Card '${item.jobCardNumber}'.`);
+      if (card.companyId !== companyId) throw new Error(`Access Denied for Job Card.`);
       
       const jobItem = card.items.find(i => i.jobItemId === item.jobItemId);
-      if (!jobItem) throw new Error(`Item not found in Job Card '${item.jobCardNumber}'.`);
+      if (!jobItem) throw new Error(`Item '${item.jobItemId}' not found in Job Card.`);
 
-      // Eligibility Check
-      if (jobItem.status !== 'Ready for Dispatch') {
-        throw new Error(`Job Item '${jobItem.productName}' is not Ready for Dispatch. Current Status: ${jobItem.status}`);
+      // Resolve Traceability from Source (Job Card / PO)
+      const customerId = card.customerId;
+      const productId = jobItem.productId || card.productId;
+      const productName = jobItem.productName || card.productName;
+      const productionOrderId = card.productionOrderId || card.poId;
+      const productionOrderItemId = jobItem.jobItemId || card.productionOrderItemId;
+      const proformaInvoiceId = card.proformaInvoiceId;
+      const quotationId = card.quotationId;
+
+      // Mandatory Traceability Check
+      if (!customerId) throw new Error(`Customer reference is missing from Job Card ${card.jobCardNumber}.`);
+      if (!productionOrderId) throw new Error(`Production Order reference is missing from Job Card ${card.jobCardNumber}.`);
+      if (!productionOrderItemId) throw new Error(`Production Order Item reference is missing from Job Card ${card.jobCardNumber}.`);
+      if (!productId) throw new Error(`Product reference is missing from Job Card ${card.jobCardNumber}.`);
+      if (!proformaInvoiceId) throw new Error(`Proforma Invoice reference is missing from Job Card ${card.jobCardNumber}.`);
+      if (!quotationId) throw new Error(`Quotation reference is missing from Job Card ${card.jobCardNumber}.`);
+
+      // Authoritative Quantity Calculation
+      const inspections = await QCApiService.getInspectionsForJobItem(productionOrderId, item.jobItemId);
+      const qcApprovedQty = inspections.reduce((sum, q) => sum + q.approvedQuantity, 0);
+      
+      // Check for rework
+      const hasOpenRework = inspections.some(q => q.qcStatus === 'Rework Required' || q.reworkQuantity > 0);
+      if (hasOpenRework) {
+        throw new Error(`Job Item '${productName}' has open rework and cannot be dispatched.`);
       }
 
-      const inspections = await QCApiService.getInspectionsForJobItem(item.productionOrderId, item.jobItemId);
-      const approvedQty = inspections.reduce((sum, q) => sum + q.approvedQuantity, 0);
-      const rejectedQty = inspections.reduce((sum, q) => sum + q.rejectedQuantity, 0);
-      const reworkQty = inspections.reduce((sum, q) => sum + q.reworkQuantity, 0);
+      // Calculate Previously Dispatched from non-cancelled/non-draft records
+      const previouslyDispatched = allStoredDispatches
+        .filter(d => 
+          d.companyId === companyId && 
+          this.RESERVING_STATUSES.includes(d.status) &&
+          d.items.some(i => i.jobCardId === item.jobCardId && i.jobItemId === item.jobItemId)
+        )
+        .reduce((sum, d) => {
+          const di = d.items.find(i => i.jobCardId === item.jobCardId && i.jobItemId === item.jobItemId);
+          return sum + (di?.currentDispatchQuantity || 0);
+        }, 0);
 
-      if (approvedQty <= 0) throw new Error(`Job Item '${jobItem.productName}' has 0 approved quantities in QC.`);
-      if (rejectedQty > 0) throw new Error(`Job Item '${jobItem.productName}' has rejected quantities in QC.`);
-      if (reworkQty > 0) throw new Error(`Job Item '${jobItem.productName}' has rework quantities in QC.`);
-
-      // Quantity Check
-      if (item.currentDispatchQuantity <= 0) throw new Error(`Dispatch quantity for '${jobItem.productName}' must be greater than 0.`);
-      if (item.currentDispatchQuantity > item.remainingQuantity) {
-        throw new Error(`Cannot over-dispatch '${jobItem.productName}'. Available: ${item.remainingQuantity}, Requested: ${item.currentDispatchQuantity}.`);
+      const availableFromQC = Math.max(0, qcApprovedQty - previouslyDispatched);
+      
+      // Packing check
+      const requiresPacking = (jobItem.specification?.toLowerCase().includes('pack') || 
+                              jobItem.specialProcess?.toLowerCase().includes('pack')) ?? false;
+      
+      let availableForDispatch = availableFromQC;
+      if (requiresPacking) {
+        const packedQty = (jobItem as any).packedQuantity || 0; 
+        const availableFromPacking = Math.max(0, packedQty - previouslyDispatched);
+        availableForDispatch = Math.min(availableFromQC, availableFromPacking);
       }
+
+      if (item.currentDispatchQuantity <= 0) throw new Error(`Requested quantity for '${productName}' must be greater than 0.`);
+      if (item.currentDispatchQuantity > availableForDispatch) {
+        throw new Error(`Dispatch quantity exceeds the currently available quantity. Available: ${availableForDispatch}.`);
+      }
+
+      validatedItems.push({
+        ...item,
+        id: `ditem-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+        dispatchId: '', // Set later
+        customerId,
+        productId,
+        productName,
+        productionOrderId,
+        productionOrderItemId,
+        jobCardId: card.id,
+        jobCardNumber: card.jobCardNumber,
+        proformaInvoiceId,
+        quotationId,
+        previouslyDispatchedQuantity: previouslyDispatched,
+        approvedQuantity: qcApprovedQty,
+        remainingQuantity: availableForDispatch - item.currentDispatchQuantity
+      });
     }
 
-    const list = this.getStoredDispatches();
+    const list = allStoredDispatches;
     const finYear = ProductionApiService.getFinancialYearString(dispatch.dispatchDate);
     const prefix = `DSP/${finYear}/`;
     
@@ -114,11 +175,24 @@ export class DispatchApiService {
     const id = `dsp-${Date.now()}`;
     const timestamp = new Date().toISOString();
 
+    // Resolve Customer snapshot from first item's source
+    const firstItem = validatedItems[0];
+    const customer = await CustomerMasterService.getCustomerById(firstItem.customerId!);
+    if (!customer) throw new Error('Customer not found for dispatch snapshot.');
+    
     const newDispatch: DispatchRecord = {
       ...dispatch,
       id,
       companyId,
       dispatchNumber,
+      customerId: customer.id,
+      customerName: customer.companyName,
+      customerCode: customer.customerCode,
+      billingAddressSnapshot: customer.billingAddress,
+      contactPersonSnapshot: customer.contactPerson,
+      phoneSnapshot: customer.mobile,
+      deliveryAddressSnapshot: dispatch.deliveryAddressSnapshot || customer.shippingAddress,
+      items: validatedItems.map(i => ({ ...i, dispatchId: id })),
       status: 'Draft',
       preparedBy: user.userName,
       createdAt: timestamp,
@@ -150,6 +224,40 @@ export class DispatchApiService {
       throw new Error('Only Draft dispatches can be confirmed.');
     }
 
+    // CRITICAL: Re-validate availability at confirmation time (Race condition protection)
+    const { JobCardApiService } = await import('./jobCardApi');
+
+    for (const item of record.items) {
+      const inspections = await QCApiService.getInspectionsForJobItem(item.productionOrderId, item.jobItemId);
+      const qcApprovedQty = inspections.reduce((sum, q) => sum + q.approvedQuantity, 0);
+
+      const previouslyDispatched = list
+        .filter(d => 
+          d.id !== id && // Exclude CURRENT record
+          d.companyId === record.companyId && 
+          this.RESERVING_STATUSES.includes(d.status) &&
+          d.items.some(i => i.jobCardId === item.jobCardId && i.jobItemId === item.jobItemId)
+        )
+        .reduce((sum, d) => {
+          const di = d.items.find(i => i.jobCardId === item.jobCardId && i.jobItemId === item.jobItemId);
+          return sum + (di?.currentDispatchQuantity || 0);
+        }, 0);
+
+      const jobItem = (await JobCardApiService.getJobCardById(item.jobCardId))?.items.find(i => i.jobItemId === item.jobItemId);
+      const requiresPacking = (jobItem?.specification?.toLowerCase().includes('pack') || 
+                              jobItem?.specialProcess?.toLowerCase().includes('pack')) ?? false;
+      
+      let availableForDispatch = qcApprovedQty - previouslyDispatched;
+      if (requiresPacking) {
+        const packedQty = (jobItem as any).packedQuantity || 0;
+        availableForDispatch = Math.min(availableForDispatch, packedQty - previouslyDispatched);
+      }
+
+      if (item.currentDispatchQuantity > availableForDispatch) {
+        throw new Error(`Dispatch quantity exceeds the currently available quantity. Available: ${availableForDispatch}.`);
+      }
+    }
+
     record.status = 'Confirmed';
     record.confirmedAt = new Date().toISOString();
     record.confirmedByUserId = user.userId;
@@ -160,7 +268,6 @@ export class DispatchApiService {
     this.saveDispatches(list);
 
     // Sync Job Card Statuses
-    const { JobCardApiService } = await import('./jobCardApi');
     for (const item of record.items) {
       const card = await JobCardApiService.getJobCardById(item.jobCardId);
       if (card) {
@@ -169,6 +276,67 @@ export class DispatchApiService {
     }
 
     return record;
+  }
+
+  public static async linkDeliveryChallan(dispatchIds: string[], challanId: string, challanNumber: string, companyId: string): Promise<void> {
+    const list = this.getStoredDispatches();
+    const updates: { index: number; record: DispatchRecord }[] = [];
+
+    // 1. Validation Phase (Dry Run)
+    for (const dId of dispatchIds) {
+      const index = list.findIndex(d => d.id === dId);
+      if (index === -1) {
+        throw new Error(`Dispatch record with ID ${dId} not found.`);
+      }
+
+      const record = list[index];
+      // Tenant Guard
+      if (record.companyId !== companyId) {
+        throw new Error(`Access Denied: Dispatch record ${record.dispatchNumber} belongs to another tenant.`);
+      }
+      
+      // Status Guard - Dispatch must be Confirmed or further (already ready for DC)
+      const eligibleStatuses: DispatchStatus[] = ['Confirmed', 'In Transit', 'Out for Delivery'];
+      if (!eligibleStatuses.includes(record.status)) {
+        throw new Error(`Invalid Status: Dispatch ${record.dispatchNumber} is in status ${record.status} and cannot be linked to a DC.`);
+      }
+
+      // Prepare update
+      const updatedRecord = { ...record, deliveryChallanId: challanId, deliveryChallanNumber: challanNumber };
+      updates.push({ index, record: updatedRecord });
+    }
+
+    // 2. Commit Phase
+    for (const update of updates) {
+      list[update.index] = update.record;
+    }
+
+    if (updates.length > 0) {
+      this.saveDispatches(list);
+    }
+  }
+
+  public static async updateDispatchStatus(id: string, status: DispatchStatus, companyId: string): Promise<void> {
+    const list = this.getStoredDispatches();
+    const index = list.findIndex(d => d.id === id);
+    if (index === -1) return;
+    
+    const record = list[index];
+    if (record.companyId !== companyId) return;
+
+    record.status = status;
+    record.updatedAt = new Date().toISOString();
+
+    list[index] = record;
+    this.saveDispatches(list);
+
+    const { JobCardApiService } = await import('./jobCardApi');
+    for (const item of record.items) {
+      const card = await JobCardApiService.getJobCardById(item.jobCardId);
+      if (card) {
+        await JobCardApiService.syncJobCardItems(card);
+      }
+    }
   }
 
   public static async cancelDispatch(id: string, reason: string): Promise<DispatchRecord> {
@@ -191,8 +359,13 @@ export class DispatchApiService {
     }
 
     record.status = 'Cancelled';
-    record.remarks = `${record.remarks}\n[CANCELLED: ${reason}]`;
+    record.remarks = `${record.remarks || ''}\n[CANCELLED: ${reason}]`.trim();
     record.updatedAt = new Date().toISOString();
+    
+    // Audit fields
+    (record as any).cancelledBy = user.userName;
+    (record as any).cancelledAt = record.updatedAt;
+    (record as any).cancellationReason = reason;
 
     list[index] = record;
     this.saveDispatches(list);
@@ -215,8 +388,7 @@ export class DispatchApiService {
     
     const filtered = all.filter(d => 
       d.companyId === companyId && 
-      d.status !== 'Cancelled' &&
-      d.status !== 'Draft' && // Only confirmed/in-transit/delivered count
+      this.RESERVING_STATUSES.includes(d.status) &&
       d.items.some(i => i.jobCardId === jobCardId && i.jobItemId === jobItemId)
     );
 

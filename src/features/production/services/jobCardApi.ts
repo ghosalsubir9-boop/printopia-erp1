@@ -112,17 +112,21 @@ export function deriveParentStatus(items: JobCardItem[]): JobCardStatus {
   const activeItems = items.filter(item => item.status !== 'Cancelled');
   if (activeItems.length === 0) return 'Cancelled';
 
-  const allDelivered = activeItems.every(item => item.status === 'Delivered' || item.status === 'Completed');
-  if (allDelivered) return 'Completed';
+  const allCompleted = activeItems.every(item => item.status === 'Completed');
+  if (allCompleted) return 'Completed';
 
-  const allDispatched = activeItems.every(item => item.status === 'Dispatched' || item.status === 'Delivered' || item.status === 'Completed');
+  const allDelivered = activeItems.every(item => item.status === 'Delivered' || item.status === 'Completed');
+  if (allDelivered) return 'Delivered';
+
+  const allDispatched = activeItems.every(item => 
+    item.status === 'Dispatched' || 
+    item.status === 'Delivered' || 
+    item.status === 'Completed'
+  );
   if (allDispatched) return 'Dispatched';
 
   const anyDispatched = activeItems.some(item => 
-    item.status === 'Dispatched' || 
-    item.status === 'Partially Dispatched' || 
-    item.status === 'Delivered' ||
-    item.status === 'Completed'
+    ['Partially Dispatched', 'Dispatched', 'Delivered', 'Completed'].includes(item.status)
   );
   if (anyDispatched) return 'Partially Dispatched';
 
@@ -302,8 +306,7 @@ export class DevelopmentLocalJobCardRepository {
 
       // 8. Dispatch Sync
       const itemDisps = dispatches.filter(d => 
-        d.status !== 'Cancelled' && 
-        d.status !== 'Draft' && 
+        DispatchApiService.RESERVING_STATUSES.includes(d.status) && 
         d.items.some(di => di.jobCardId === jobCard.id && di.jobItemId === item.jobItemId)
       );
       const totalDispatched = itemDisps.reduce((sum, d) => {
@@ -326,8 +329,19 @@ export class DevelopmentLocalJobCardRepository {
         c.status === 'Delivered' && 
         c.items.some(ci => ci.jobCardId === jobCard.id && ci.jobItemId === item.jobItemId)
       );
-      if (itemChallans.length > 0 && nextStatus === 'Dispatched') {
-        nextStatus = 'Delivered';
+      
+      const totalDelivered = itemChallans.reduce((sum, c) => {
+        const ci = c.items.find(ci => ci.jobCardId === jobCard.id && ci.jobItemId === item.jobItemId);
+        // In DC items, we should have the dispatchQuantity or similar
+        return sum + (ci?.currentDispatchQuantity || ci?.dispatchQuantity || 0);
+      }, 0);
+
+      if (totalDelivered > 0) {
+        if (totalDelivered >= item.quantity) {
+          nextStatus = 'Completed';
+        } else {
+          nextStatus = 'Delivered'; // This acts as 'Partially Delivered' in the UI if nextStatus < Completed
+        }
       }
 
       const mapQCStatus = (status: QCStatus): JobCardItem['qcStatus'] => {
