@@ -974,6 +974,30 @@ async function runTests() {
   // ==========================================
   // MODULE-10: DISPATCH & DELIVERY CHALLAN TESTS
   // ==========================================
+
+  // Mock QC Inspection so dispatch validation passes
+  const mockInspection = {
+    id: `qc-${Date.now()}`,
+    companyId: 'company-1',
+    qcNumber: 'QC-001',
+    qcDate: new Date().toISOString().split('T')[0],
+    poId: jc.poId,
+    poNumber: jc.poNumber,
+    jobItemId: jc.items[0].jobItemId,
+    jobItemIndex: 1,
+    productId: jc.items[0].productId,
+    productName: jc.items[0].productName,
+    inspectedQuantity: jc.items[0].quantity,
+    approvedQuantity: jc.items[0].quantity,
+    rejectedQuantity: 0,
+    reworkQuantity: 0,
+    qcStatus: 'Approved',
+    qcBy: 'Tester John',
+    remarks: 'Auto-approved for test',
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString()
+  };
+  localStorage.setItem('printopia_qc_inspections', JSON.stringify([mockInspection]));
   
   // 1. Create Dispatch Record (Multi-Item)
   try {
@@ -1014,7 +1038,7 @@ async function runTests() {
         qtyPerPack: 100,
         numberOfPacks: item.quantity / 100
       }))
-    });
+    } as any);
     assert(dispatch !== null && dispatch.status === 'Draft', 'Verify: Create Multi-item Dispatch Record in Draft status.');
     
     // 2. Confirm Dispatch
@@ -1058,6 +1082,52 @@ async function runTests() {
   } catch (e: any) {
     assert(false, `Module-10 test failed: ${e.message}`);
     console.error(e);
+  }
+
+  
+  // MODULE-11: GST INVOICE TESTS
+  // ==========================================
+  console.log('\n// MODULE-11: GST INVOICE TESTS');
+  
+  AuthService.createSession({
+    userId: 'user-777',
+    userName: 'Tester John',
+    email: 'tester@company1.com',
+    role: 'COMPANY_ADMIN',
+    companyId: 'company-1',
+    companyName: 'Company 1'
+  });
+
+  const allChallans = await DeliveryChallanApiService.getChallans();
+  const dc = allChallans[0];
+  if (dc) {
+    const qtyMap = {};
+    for (const item of dc.items) {
+      qtyMap[item.id] = item.currentDispatchQuantity;
+    }
+    
+    try {
+      const invoice = await BillingApiService.createInvoiceFromDeliveryChallans([dc.id], qtyMap);
+      assert(invoice.companyId === 'company-1', 'Verify: Invoice companyId is correct');
+      assert(invoice.items.length === dc.items.length, 'Verify: Invoice items count matches DC items');
+      assert(invoice.invoiceNumber.startsWith('INV/2026-27/'), 'Verify: Invoice number format');
+      console.log('[PASS] Verify: Create GST Invoice from Delivery Challan');
+      
+      try {
+        await BillingApiService.createInvoiceFromDeliveryChallans([dc.id], qtyMap);
+        assert(false, 'Should have blocked duplicate invoice quantity');
+      } catch (e) {
+        assert(e.message.includes('exceeds available quantity'), 'Verify: Duplicate invoice quantity is blocked');
+        console.log('[PASS] Verify: Block duplicate invoice quantity');
+      }
+      passedCount++;
+    } catch (e) {
+      failedCount++;
+      console.error('[FAIL] GST Invoice tests failed:', e);
+    }
+  } else {
+    console.error('[FAIL] Could not find Delivery Challan to test billing');
+    failedCount++;
   }
 
   console.log('\n=== PRINTOPIA AUTH & INTEGRITY TEST RESULTS ===');

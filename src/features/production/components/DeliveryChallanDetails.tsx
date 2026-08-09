@@ -35,6 +35,7 @@ import {
 } from 'lucide-react';
 import { DeliveryChallan, DeliveryTrackingStatus, ProofOfDelivery } from '../types';
 import { DeliveryChallanApiService } from '../services/deliveryChallanApi';
+import { CompanySettingsService } from '../../../services/CompanySettingsService';
 
 interface DeliveryChallanDetailsProps {
   challan: DeliveryChallan;
@@ -115,20 +116,34 @@ export default function DeliveryChallanDetails({ challan: initialChallan, onBack
 
   // If in Print Mode, render ONLY the printable envelope/sheet structure
   if (isPrinting) {
+    const companyBranding = CompanySettingsService.getCompanyBrandingForDocument(challan);
     return (
       <Box sx={{ p: 4, bgcolor: 'white', color: 'black', minHeight: '100vh', fontFamily: 'serif' }}>
         <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 3 }}>
           {/* Logo & Company details */}
           <Box>
-            <Typography variant="h4" sx={{ fontWeight: 'bold', letterSpacing: 1.5, color: 'black' }}>
-              PRINTOPIA ERP
+            {companyBranding.logo && (
+              <Box sx={{ mb: 1 }}>
+                <img 
+                  src={companyBranding.logo} 
+                  alt={companyBranding.name} 
+                  referrerPolicy="no-referrer" 
+                  style={{ maxHeight: '50px', maxWidth: '200px', objectFit: 'contain' }} 
+                  onError={(e) => { (e.target as HTMLElement).style.display = 'none'; }}
+                />
+              </Box>
+            )}
+            <Typography variant="h5" sx={{ fontWeight: 'bold', color: 'black' }}>
+              {companyBranding.name}
             </Typography>
-            <Typography variant="subtitle2" color="text.secondary" sx={{ fontStyle: 'italic' }}>
-              Printopia Digital & Packaging Solutions Pvt. Ltd.
-            </Typography>
-            <Typography variant="body2" sx={{ fontSize: '0.8rem' }}>
-              Factory: Sector-5, Industrial Area, Okhla, New Delhi - 110020<br />
-              Email: delivery@printopia.com | Contact: +91 98765 43210
+            {companyBranding.legalName && (
+              <Typography variant="subtitle2" color="text.secondary" sx={{ fontStyle: 'italic' }}>
+                {companyBranding.legalName}
+              </Typography>
+            )}
+            <Typography variant="body2" sx={{ fontSize: '0.8rem', whiteSpace: 'pre-line' }}>
+              {companyBranding.address}<br />
+              <b>GSTIN:</b> {companyBranding.gstin} | <b>Email:</b> {companyBranding.email} | <b>Contact:</b> {companyBranding.mobile || companyBranding.phone}
             </Typography>
           </Box>
           <Box sx={{ textAlign: 'right' }}>
@@ -263,7 +278,7 @@ export default function DeliveryChallanDetails({ challan: initialChallan, onBack
               Authorized Signatory
             </Typography>
             <Typography variant="caption" color="text.secondary">
-              (For Printopia Solutions)
+              (For {companyBranding.name})
             </Typography>
           </Grid>
         </Grid>

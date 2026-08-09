@@ -90,6 +90,7 @@ export interface PIItem {
 export interface ProformaInvoice {
   id: string;
   companyId?: string;
+  companySnapshot?: string;
   piNumber: string;
   basePiNumber?: string; // Original PI number before revisions
   revisionNumber: number;

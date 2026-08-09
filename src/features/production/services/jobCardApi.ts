@@ -378,9 +378,6 @@ export class DevelopmentLocalJobCardRepository {
         updatedAt: new Date().toISOString()
       };
       
-      // Cascade PO status update
-      await ProductionApiService.syncPOStatus(jobCard.poId);
-
       return updatedCard;
     }
     return jobCard;
@@ -401,10 +398,13 @@ export class DevelopmentLocalJobCardRepository {
     // Sync all loaded job cards
     let syncedList: JobCard[] = [];
     let stateChanged = false;
+    const changedPoIds = new Set<string>();
+    
     for (const card of list) {
       const synced = await this.syncJobCardItems(card);
       if (synced.updatedAt !== card.updatedAt) {
         stateChanged = true;
+        if (synced.poId) changedPoIds.add(synced.poId);
       }
       syncedList.push(synced);
     }
@@ -414,6 +414,11 @@ export class DevelopmentLocalJobCardRepository {
       const syncedMap = new Map(syncedList.map(c => [c.id, c]));
       const updatedAll = allStored.map(card => syncedMap.get(card.id) || card);
       this.saveJobCards(updatedAll);
+      
+      // Now that they are saved, cascade PO status
+      for (const poId of changedPoIds) {
+        await ProductionApiService.syncPOStatus(poId).catch(console.error);
+      }
     }
     list = syncedList;
 
@@ -479,6 +484,9 @@ export class DevelopmentLocalJobCardRepository {
       if (synced.updatedAt !== found.updatedAt) {
         const updatedList = list.map(c => c.id === id ? synced : c);
         this.saveJobCards(updatedList);
+        if (synced.poId) {
+          await ProductionApiService.syncPOStatus(synced.poId).catch(console.error);
+        }
       }
       return synced;
     }

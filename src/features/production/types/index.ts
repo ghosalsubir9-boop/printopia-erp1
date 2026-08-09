@@ -132,6 +132,7 @@ export interface JobItem {
 export interface ProductionOrder {
   id: string;
   companyId: string;
+  companySnapshot?: string;
   poNumber: string; // PO/YYYY-YY/NNNN format
   poDate: string;
   date?: string; // fallback alias
@@ -345,6 +346,29 @@ export interface DispatchItem {
   poNumber?: string; // Added for backward compatibility
 }
 
+export interface DispatchItemCreatePayload extends Omit<DispatchItem, 'id' | 'dispatchId' | 'proformaInvoiceId' | 'quotationId' | 'customerId' | 'productId' | 'orderedQuantity' | 'remainingQuantity' | 'productionOrderId' | 'productionOrderItemId' | 'jobCardId' | 'jobCardNumber'> {
+  id?: string;
+  dispatchId?: string;
+  jobCardId: string;
+  jobCardNumber: string;
+  productionOrderId?: string;
+  productionOrderItemId?: string;
+  proformaInvoiceId?: string;
+  quotationId?: string;
+  customerId?: string;
+  productId?: string;
+  orderedQuantity?: number;
+  remainingQuantity?: number;
+}
+
+export interface DispatchCreatePayload extends Omit<DispatchRecord, 'id' | 'companyId' | 'dispatchNumber' | 'createdAt' | 'updatedAt' | 'status' | 'preparedBy' | 'customerId' | 'customerCode' | 'billingAddressSnapshot' | 'phoneSnapshot' | 'items'> {
+  customerId?: string;
+  customerCode?: string;
+  billingAddressSnapshot?: string;
+  phoneSnapshot?: string;
+  items: DispatchItemCreatePayload[];
+}
+
 export interface DispatchRecord {
   id: string;
   companyId: string;
@@ -424,6 +448,7 @@ export interface ProofOfDelivery {
 export interface DeliveryChallan {
   id: string;
   companyId: string;
+  companySnapshot?: string;
   challanNumber: string; // DC/2026-27/0001
   challanDate: string;
   
@@ -672,6 +697,7 @@ export interface JobCardItem {
 export interface JobCard {
   id: string;
   companyId: string;
+  companySnapshot?: string;
   jobCardNumber: string; // JC/2026-27/0001 format
   poId: string; // Linked Production Order
   poNumber: string;

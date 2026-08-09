@@ -170,14 +170,24 @@ export default function CompanySettingsView() {
                       <Divider sx={{ mb: 3 }} />
 
                       <Grid container spacing={2}>
-                        <Grid size={12}>
+                        <Grid size={{ xs: 12, sm: 6 }}>
                           <TextField
                             required
                             fullWidth
-                            label="Company Registered Name"
+                            label="Company Name"
                             value={settings.name}
                             onChange={(e) => handleChange('name', e.target.value)}
                             placeholder="e.g. PRINTOPIA GRAPHICS PVT. LTD."
+                          />
+                        </Grid>
+
+                        <Grid size={{ xs: 12, sm: 6 }}>
+                          <TextField
+                            fullWidth
+                            label="Legal Name"
+                            value={settings.legalName || ''}
+                            onChange={(e) => handleChange('legalName', e.target.value)}
+                            placeholder="e.g. Printopia Graphics Private Limited"
                           />
                         </Grid>
 
@@ -188,7 +198,7 @@ export default function CompanySettingsView() {
                             value={settings.logo}
                             onChange={(e) => handleChange('logo', e.target.value)}
                             placeholder="e.g. https://via.placeholder.com/150?text=Logo"
-                            helperText="Provide a direct image URL for the printed tax invoice header"
+                            helperText="Provide a direct image URL or Base64 data for document headers"
                           />
                         </Grid>
 
@@ -197,15 +207,25 @@ export default function CompanySettingsView() {
                             required
                             fullWidth
                             multiline
-                            rows={3}
+                            rows={2}
                             label="Full Corporate Address"
                             value={settings.address}
                             onChange={(e) => handleChange('address', e.target.value)}
-                            placeholder="Plot No. 42, Printing Press Area, Kolkata - 700001"
+                            placeholder="Plot No. 42, Printing Press Area, Wagle Industrial Estate"
                           />
                         </Grid>
 
-                        <Grid size={{ xs: 12, sm: 6 }}>
+                        <Grid size={{ xs: 12, sm: 4 }}>
+                          <TextField
+                            fullWidth
+                            label="City"
+                            value={settings.city || ''}
+                            onChange={(e) => handleChange('city', e.target.value)}
+                            placeholder="e.g. Kolkata"
+                          />
+                        </Grid>
+
+                        <Grid size={{ xs: 12, sm: 4 }}>
                           <TextField
                             required
                             fullWidth
@@ -222,7 +242,7 @@ export default function CompanySettingsView() {
                           </TextField>
                         </Grid>
 
-                        <Grid size={{ xs: 12, sm: 6 }}>
+                        <Grid size={{ xs: 12, sm: 4 }}>
                           <TextField
                             required
                             fullWidth
@@ -230,7 +250,17 @@ export default function CompanySettingsView() {
                             value={settings.stateCode}
                             onChange={(e) => handleChange('stateCode', e.target.value)}
                             placeholder="e.g. 19"
-                            helperText="Standard numeric GST State Code"
+                            helperText="GST State Code"
+                          />
+                        </Grid>
+
+                        <Grid size={{ xs: 12, sm: 6 }}>
+                          <TextField
+                            fullWidth
+                            label="Pincode"
+                            value={settings.pincode || ''}
+                            onChange={(e) => handleChange('pincode', e.target.value)}
+                            placeholder="e.g. 700001"
                           />
                         </Grid>
                       </Grid>
@@ -258,12 +288,32 @@ export default function CompanySettingsView() {
 
                         <Grid size={{ xs: 12, sm: 6 }}>
                           <TextField
+                            fullWidth
+                            label="Office Phone"
+                            value={settings.phone || ''}
+                            onChange={(e) => handleChange('phone', e.target.value)}
+                            placeholder="e.g. +91 33 22223333"
+                          />
+                        </Grid>
+
+                        <Grid size={{ xs: 12, sm: 6 }}>
+                          <TextField
                             required
                             fullWidth
                             label="Contact Email"
                             value={settings.email}
                             onChange={(e) => handleChange('email', e.target.value)}
                             placeholder="e.g. billing@printopia.com"
+                          />
+                        </Grid>
+
+                        <Grid size={{ xs: 12, sm: 6 }}>
+                          <TextField
+                            fullWidth
+                            label="Website"
+                            value={settings.website || ''}
+                            onChange={(e) => handleChange('website', e.target.value)}
+                            placeholder="e.g. https://company.com"
                           />
                         </Grid>
                       </Grid>
@@ -281,14 +331,24 @@ export default function CompanySettingsView() {
                       <Divider sx={{ mb: 3 }} />
 
                       <Grid container spacing={2}>
-                        <Grid size={12}>
+                        <Grid size={{ xs: 12, sm: 6 }}>
                           <TextField
                             required
                             fullWidth
-                            label="GSTIN (Goods & Services Tax ID)"
+                            label="GSTIN"
                             value={settings.gstin}
                             onChange={(e) => handleChange('gstin', e.target.value)}
                             placeholder="e.g. 19AABCP1234F1Z1"
+                          />
+                        </Grid>
+
+                        <Grid size={{ xs: 12, sm: 6 }}>
+                          <TextField
+                            fullWidth
+                            label="PAN Number"
+                            value={settings.pan || ''}
+                            onChange={(e) => handleChange('pan', e.target.value)}
+                            placeholder="e.g. AABCP1234F"
                           />
                         </Grid>
 

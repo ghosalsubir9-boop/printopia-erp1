@@ -48,9 +48,11 @@ export class QuotationApiService {
     }
 
     const companyId = AuthService.requireCurrentCompanyId();
+    const { CompanySettingsService } = await import('../../../services/CompanySettingsService');
     const preparedQuotation: QuotationHeader = {
       ...quotation,
       companyId,
+      companySnapshot: quotation.companySnapshot || JSON.stringify(CompanySettingsService.getSettingsForCompany(companyId)),
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString()
     };

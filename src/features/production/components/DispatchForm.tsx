@@ -157,34 +157,20 @@ export default function DispatchForm({ preselectedCustomer, preselectedJobCardId
     try {
       await DispatchApiService.createDispatch({
         dispatchDate,
-        customerId: '', // Service will resolve this from Job Card
         customerName,
-        customerCode: '', // Service will resolve this from Job Card
-        billingAddressSnapshot: '',
         deliveryAddressSnapshot: deliveryAddress,
         contactPersonSnapshot: contactPerson,
-        phoneSnapshot: '',
         items: selectedItems.map(i => ({
-          id: '', // Service will generate
-          dispatchId: '', // Service will set
           jobCardId: i.jobCardId,
           jobCardNumber: i.jobCardNumber,
-          productionOrderId: i.poId,
           productionOrderNumber: i.poNumber,
-          productionOrderItemId: i.jobItemId,
           jobItemId: i.jobItemId,
-          proformaInvoiceId: '', // Service will resolve
-          quotationId: '', // Service will resolve
-          customerId: '', // Service will resolve
-          productId: '', // Service will resolve
           productName: i.productName,
           specification: '',
-          orderedQuantity: 0, // Service will resolve
           approvedQuantity: i.approvedQty,
           packedQuantity: i.approvedQty,
           previouslyDispatchedQuantity: i.previouslyDispatched,
           currentDispatchQuantity: i.currentDispatchQty,
-          remainingQuantity: 0, // Service will calculate
           unit: 'Pcs',
           packingType: 'Box',
           qtyPerPack: i.currentDispatchQty,

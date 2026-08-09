@@ -54,6 +54,7 @@ import {
 } from '@mui/icons-material';
 import { JobCard, JobCardStatus, JobCardItem, JobCardArtwork, JobCardTimeLog, JobCardQCDetails, JobCardMaterialConsumption, POPriority, ArtworkStatus, OperatorAction } from '../types';
 import { JobCardApiService, getNextAllowedStages } from '../services/jobCardApi';
+import { CompanySettingsService } from '../../../services/CompanySettingsService';
 import { COMPANY_SETTINGS } from '../../../services/CompanySettingsService';
 import { BarcodeGenerator, QRCodeGenerator } from './BarcodeQRGenerator';
 import { SheetLayoutView } from '../../estimate/job-entry/components/SheetLayoutView';
@@ -748,22 +749,39 @@ export default function JobCardDetails({ jobCard, currentRole, onBack, onUpdate 
           </Box>
 
           <Paper id="printable-job-card-container" sx={{ p: '2.5cm', maxWidth: '210mm', minHeight: '297mm', mx: 'auto', background: 'white', color: 'black', border: '1px solid #ddd', boxShadow: 'none' }}>
-            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
-              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                <Box sx={{ width: 45, height: 45, bgcolor: '#2563eb', display: 'flex', justifyContent: 'center', alignItems: 'center', borderRadius: 1 }}>
-                  <Typography variant="h6" sx={{ color: 'white', fontWeight: 'bold' }}>P</Typography>
-                </Box>
-                <Box>
-                  <Typography variant="h6" sx={{ fontWeight: 'bold', letterSpacing: 1 }}>PRINTOPIA ERP</Typography>
-                  <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>High Precision Print MIS Platform</Typography>
-                </Box>
-              </Box>
+            {(() => {
+              const companyBranding = CompanySettingsService.getCompanyBrandingForDocument(jobCard);
+              return (
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+                    {companyBranding.logo ? (
+                      <img 
+                        src={companyBranding.logo} 
+                        alt={companyBranding.name} 
+                        referrerPolicy="no-referrer" 
+                        style={{ maxHeight: '45px', maxWidth: '180px', objectFit: 'contain' }} 
+                        onError={(e) => { (e.target as HTMLElement).style.display = 'none'; }}
+                      />
+                    ) : (
+                      <Box sx={{ width: 40, height: 40, bgcolor: '#1e3a8a', display: 'flex', justifyContent: 'center', alignItems: 'center', borderRadius: 1 }}>
+                        <Typography variant="h6" sx={{ color: 'white', fontWeight: 'bold' }}>{companyBranding.name.charAt(0)}</Typography>
+                      </Box>
+                    )}
+                    <Box>
+                      <Typography variant="h6" sx={{ fontWeight: 'bold', color: 'black' }}>{companyBranding.name}</Typography>
+                      {companyBranding.legalName && (
+                        <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>{companyBranding.legalName}</Typography>
+                      )}
+                    </Box>
+                  </Box>
 
-              <Box sx={{ textAlign: 'right' }}>
-                <Typography variant="h5" sx={{ fontWeight: 'bold', color: '#1e3a8a' }}>JOB CARD</Typography>
-                <Typography variant="body2" sx={{ fontFamily: 'monospace', fontWeight: 'bold' }}>{jobCard.jobCardNumber}</Typography>
-              </Box>
-            </Box>
+                  <Box sx={{ textAlign: 'right' }}>
+                    <Typography variant="h5" sx={{ fontWeight: 'bold', color: '#1e3a8a' }}>JOB CARD</Typography>
+                    <Typography variant="body2" sx={{ fontFamily: 'monospace', fontWeight: 'bold' }}>{jobCard.jobCardNumber}</Typography>
+                  </Box>
+                </Box>
+              );
+            })()}
 
             <Divider sx={{ mb: 3, borderColor: 'black' }} />
 

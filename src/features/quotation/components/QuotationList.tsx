@@ -206,7 +206,7 @@ export default function QuotationList({ onEdit, onCreate, onView }: {
             try {
               const { DocumentPdfService } = await import('../../../utils/DocumentPdfService');
               const { CompanySettingsService } = await import('../../../services/CompanySettingsService');
-              const companyDetails = CompanySettingsService.getSettings();
+              const companyDetails = CompanySettingsService.getCompanyBrandingForDocument(selectedQuotation);
               await DocumentPdfService.generateQuotationPdf(selectedQuotation, companyDetails);
             } catch(e) {
               console.error(e);

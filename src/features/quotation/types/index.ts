@@ -59,6 +59,7 @@ export interface QuotationRevision {
 export interface QuotationHeader {
   id: string;
   companyId?: string;
+  companySnapshot?: string;
   quotationNumber: string; // e.g. QT-2026-0001
   currentRevision: number;
   date: string;

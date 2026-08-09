@@ -175,6 +175,7 @@ export class PIApiService {
       ...calculated,
       id: calculated.id || `pi-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
       companyId,
+      companySnapshot: calculated.companySnapshot || JSON.stringify(CompanySettingsService.getSettingsForCompany(companyId)),
       piNumber,
       basePiNumber: piNumber,
       revisionNumber: 0,

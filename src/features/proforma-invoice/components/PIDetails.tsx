@@ -245,7 +245,7 @@ export default function PIDetails({ invoice, onBack, onEdit, onCreateProductionO
           try {
             const { DocumentPdfService } = await import('../../../utils/DocumentPdfService');
             const { CompanySettingsService } = await import('../../../services/CompanySettingsService');
-            const companyDetails = CompanySettingsService.getSettings();
+            const companyDetails = CompanySettingsService.getCompanyBrandingForDocument(invoice);
             await DocumentPdfService.generateProformaInvoicePdf(invoice, companyDetails);
           } catch(e) {
             console.error("PDF generation failed", e);

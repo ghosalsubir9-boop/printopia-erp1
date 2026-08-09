@@ -109,7 +109,7 @@ export default function InvoicePrintPreview({ invoiceId, onBack }: InvoicePrintP
   };
 
   const sameState = invoice.customerStateCode === invoice.companyStateCode;
-  const companySettings = CompanySettingsService.getSettings();
+  const companySettings = CompanySettingsService.getCompanyBrandingForDocument(invoice);
 
   const handlePrint = () => {
     window.print();
@@ -191,7 +191,13 @@ export default function InvoicePrintPreview({ invoiceId, onBack }: InvoicePrintP
           <Grid size={6} sx={{ borderRight: '1.5px solid black', p: 2 }}>
             {companySettings.logo && (
               <Box sx={{ mb: 1 }}>
-                <img src={companySettings.logo} alt="Logo" referrerPolicy="no-referrer" style={{ maxHeight: '45px', maxWidth: '180px' }} />
+                <img 
+                  src={companySettings.logo} 
+                  alt={companySettings.name} 
+                  referrerPolicy="no-referrer" 
+                  style={{ maxHeight: '45px', maxWidth: '180px', objectFit: 'contain' }} 
+                  onError={(e) => { (e.target as HTMLElement).style.display = 'none'; }}
+                />
               </Box>
             )}
             <Typography variant="body1" sx={{ fontWeight: 800, fontSize: '1.05rem', color: 'black' }}>

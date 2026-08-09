@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { DispatchRecord, DispatchStatus, ProductionStage, DispatchItem } from '../types';
+import { DispatchRecord, DispatchStatus, ProductionStage, DispatchItem, DispatchCreatePayload } from '../types';
 import { ProductionApiService } from './api';
 import { QCApiService } from './qcApi';
 import { AuthService } from '../../../services/authService';
@@ -16,7 +16,7 @@ export class DispatchApiService {
   // Shared helper for quantity-reserving statuses
   public static readonly RESERVING_STATUSES: DispatchStatus[] = ['Confirmed', 'In Transit', 'Out for Delivery', 'Delivered', 'Returned'];
 
-  private static getStoredDispatches(): DispatchRecord[] {
+  public static getStoredDispatches(): DispatchRecord[] {
     const data = localStorage.getItem(STORAGE_KEY);
     if (!data) {
       return [];
@@ -29,7 +29,7 @@ export class DispatchApiService {
     }
   }
 
-  private static saveDispatches(dispatches: DispatchRecord[]) {
+  public static saveDispatches(dispatches: DispatchRecord[]) {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(dispatches));
   }
 
@@ -51,7 +51,7 @@ export class DispatchApiService {
   }
 
   public static async createDispatch(
-    dispatch: Omit<DispatchRecord, 'id' | 'companyId' | 'dispatchNumber' | 'createdAt' | 'updatedAt' | 'status' | 'preparedBy'>
+    dispatch: DispatchCreatePayload
   ): Promise<DispatchRecord> {
     await delay(300);
     const companyId = AuthService.requireCurrentCompanyId();
@@ -74,18 +74,21 @@ export class DispatchApiService {
       const card = await JobCardApiService.getJobCardById(item.jobCardId);
       if (!card) throw new Error(`Job Card '${item.jobCardNumber}' not found.`);
       if (card.companyId !== companyId) throw new Error(`Access Denied for Job Card.`);
+
+      // Lookup PO as secondary authoritative source
+      const po = await ProductionApiService.getOrderById(card.poId || card.productionOrderId);
       
       const jobItem = card.items.find(i => i.jobItemId === item.jobItemId);
       if (!jobItem) throw new Error(`Item '${item.jobItemId}' not found in Job Card.`);
 
       // Resolve Traceability from Source (Job Card / PO)
-      const customerId = card.customerId;
+      const customerId = card.customerId || po?.customerId;
       const productId = jobItem.productId || card.productId;
       const productName = jobItem.productName || card.productName;
-      const productionOrderId = card.productionOrderId || card.poId;
+      const productionOrderId = card.productionOrderId || card.poId || po?.id;
       const productionOrderItemId = jobItem.jobItemId || card.productionOrderItemId;
-      const proformaInvoiceId = card.proformaInvoiceId;
-      const quotationId = card.quotationId;
+      const proformaInvoiceId = card.proformaInvoiceId || po?.piId;
+      const quotationId = card.quotationId || po?.quotationId;
 
       // Mandatory Traceability Check
       if (!customerId) throw new Error(`Customer reference is missing from Job Card ${card.jobCardNumber}.`);
@@ -148,10 +151,11 @@ export class DispatchApiService {
         jobCardNumber: card.jobCardNumber,
         proformaInvoiceId,
         quotationId,
+        orderedQuantity: jobItem.quantity || 0,
         previouslyDispatchedQuantity: previouslyDispatched,
         approvedQuantity: qcApprovedQty,
         remainingQuantity: availableForDispatch - item.currentDispatchQuantity
-      });
+      } as DispatchItem);
     }
 
     const list = allStoredDispatches;
@@ -278,7 +282,7 @@ export class DispatchApiService {
     return record;
   }
 
-  public static async linkDeliveryChallan(dispatchIds: string[], challanId: string, challanNumber: string, companyId: string): Promise<void> {
+  public static async linkDeliveryChallan(dispatchIds: string[], challanId: string, challanNumber: string, companyId: string, commit = true): Promise<DispatchRecord[]> {
     const list = this.getStoredDispatches();
     const updates: { index: number; record: DispatchRecord }[] = [];
 
@@ -311,9 +315,11 @@ export class DispatchApiService {
       list[update.index] = update.record;
     }
 
-    if (updates.length > 0) {
+    if (commit && updates.length > 0) {
       this.saveDispatches(list);
     }
+
+    return list;
   }
 
   public static async updateDispatchStatus(id: string, status: DispatchStatus, companyId: string): Promise<void> {

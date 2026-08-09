@@ -2,12 +2,20 @@ import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { numberToWordsIndian } from '../utils/numberToWords';
 import { PdfAuditService } from '../services/PdfAuditService';
+import { CompanySettingsService } from '../services/CompanySettingsService';
 
 export class DocumentPdfService {
   static loadLogo(): Promise<string | null> {
     return new Promise((resolve) => {
       resolve(null);
     });
+  }
+
+  static getBranding(doc: any, providedDetails?: any) {
+    if (providedDetails && providedDetails.name) {
+      return providedDetails;
+    }
+    return CompanySettingsService.getCompanyBrandingForDocument(doc);
   }
 
   static drawHeader(doc: jsPDF, companyDetails: any, documentType: string, rightAlignDetails: string[]) {
@@ -19,17 +27,19 @@ export class DocumentPdfService {
     // Reset styling
     doc.setTextColor(50, 50, 50);
 
-    // Company Name / Logo (Assuming text for now as per instructions)
-    doc.setFontSize(22);
+    // Company Name
+    const compName = companyDetails.name || companyDetails.legalName || 'Company';
+    doc.setFontSize(20);
     doc.setFont("helvetica", "bold");
-    doc.text(companyDetails.legalName || 'Printopia Solutions', 14, 22);
+    doc.text(compName, 14, 22);
 
     doc.setFontSize(9);
     doc.setFont("helvetica", "normal");
     
     let leftY = 28;
-    if (companyDetails.registeredAddress) {
-      const addressLines = doc.splitTextToSize(companyDetails.registeredAddress, 90);
+    const address = companyDetails.address || companyDetails.registeredAddress;
+    if (address) {
+      const addressLines = doc.splitTextToSize(address, 90);
       doc.text(addressLines, 14, leftY);
       leftY += addressLines.length * 4.5;
     }
@@ -48,11 +58,12 @@ export class DocumentPdfService {
       doc.text(companyDetails.pan, 23, leftY);
       leftY += 4.5;
     }
-    if (companyDetails.phone) {
+    const phone = companyDetails.phone || companyDetails.mobile;
+    if (phone) {
       doc.setFont("helvetica", "bold");
       doc.text("Mobile: ", 14, leftY);
       doc.setFont("helvetica", "normal");
-      doc.text(companyDetails.phone, 26, leftY);
+      doc.text(phone, 26, leftY);
       leftY += 4.5;
     }
     if (companyDetails.email) {
@@ -71,7 +82,7 @@ export class DocumentPdfService {
     }
 
     // Right Side Document Title
-    doc.setFontSize(24);
+    doc.setFontSize(22);
     doc.setFont("helvetica", "bold");
     doc.setTextColor(41, 128, 185);
     doc.text(documentType, 196, 22, { align: 'right' });
@@ -112,6 +123,11 @@ export class DocumentPdfService {
     doc.setLineWidth(0.5);
     doc.line(14, finalY + 5, 196, finalY + 5);
 
+    const bankName = companyDetails.bankDetails?.bankName || companyDetails.bankName || '-';
+    const accNo = companyDetails.bankDetails?.accountNumber || companyDetails.accountNumber || '-';
+    const ifsc = companyDetails.bankDetails?.ifscCode || companyDetails.ifscCode || '-';
+    const branch = companyDetails.bankDetails?.branchName || companyDetails.branchName || '-';
+
     // Bank Details
     doc.setFontSize(9);
     doc.setFont("helvetica", "bold");
@@ -120,10 +136,10 @@ export class DocumentPdfService {
     
     doc.setFontSize(8);
     doc.setTextColor(50, 50, 50);
-    doc.text(`Bank Name: ${companyDetails.bankName || '-'}`, 14, finalY + 17);
-    doc.text(`Account No: ${companyDetails.accountNumber || '-'}`, 14, finalY + 22);
-    doc.text(`IFSC Code: ${companyDetails.ifscCode || '-'}`, 14, finalY + 27);
-    doc.text(`Branch: ${companyDetails.branchName || '-'}`, 14, finalY + 32);
+    doc.text(`Bank Name: ${bankName}`, 14, finalY + 17);
+    doc.text(`Account No: ${accNo}`, 14, finalY + 22);
+    doc.text(`IFSC Code: ${ifsc}`, 14, finalY + 27);
+    doc.text(`Branch: ${branch}`, 14, finalY + 32);
 
     // Terms
     if (showTerms) {
@@ -144,11 +160,14 @@ export class DocumentPdfService {
     doc.setFontSize(9);
     doc.setFont("helvetica", "bold");
     doc.setTextColor(50, 50, 50);
-    doc.text(`For ${companyDetails.legalName || 'Printopia Solutions'}`, 196, finalY + 12, { align: 'right' });
+    const compName = companyDetails.name || companyDetails.legalName || 'Company';
+    doc.text(`For ${compName}`, 196, finalY + 12, { align: 'right' });
     
     doc.setFontSize(8);
     doc.setFont("helvetica", "normal");
     doc.setTextColor(100, 100, 100);
+    const sigName = companyDetails.authorizedSignatory || 'Authorized Signatory';
+    doc.text(sigName, 196, finalY + 28, { align: 'right' });
     doc.text("Authorized Signatory", 196, finalY + 32, { align: 'right' });
   }
 
@@ -198,8 +217,9 @@ export class DocumentPdfService {
     }
   }
 
-  static async generateQuotationPdf(quotation: any, companyDetails: any) {
+  static async generateQuotationPdf(quotation: any, companyDetails?: any) {
     const doc = new jsPDF();
+    const branding = this.getBranding(quotation, companyDetails);
     
     // Add Watermark first so it's behind text
     this.addWatermark(doc, "QUOTATION");
@@ -212,7 +232,7 @@ export class DocumentPdfService {
       rightDetails.push(`Valid Until: ${new Date(quotation.validUntil).toLocaleDateString('en-IN')}`);
     }
 
-    let currentY = this.drawHeader(doc, companyDetails, "QUOTATION", rightDetails);
+    let currentY = this.drawHeader(doc, branding, "QUOTATION", rightDetails);
     
     currentY = this.drawCustomerSection(doc, "Quoted To:", quotation.customerName, quotation.customerAddress, "", currentY);
     
@@ -270,15 +290,16 @@ export class DocumentPdfService {
     });
 
     const finalY = (doc as any).lastAutoTable.finalY + 10;
-    this.drawFooter(doc, companyDetails, finalY, true);
+    this.drawFooter(doc, branding, finalY, true);
 
     const fileName = `Quotation_${quotation.quotationNumber}_${quotation.customerName?.replace(/[^a-zA-Z0-9]/g, '_')}.pdf`;
     await PdfAuditService.logAction('Quotation', quotation.quotationNumber, 'Downloaded');
     doc.save(fileName);
   }
 
-  static async generateProformaInvoicePdf(pi: any, companyDetails: any) {
+  static async generateProformaInvoicePdf(pi: any, companyDetails?: any) {
     const doc = new jsPDF();
+    const branding = this.getBranding(pi, companyDetails);
     
     const rightDetails = [
       `PI No: ${pi.piNumber}`,
@@ -288,7 +309,7 @@ export class DocumentPdfService {
       rightDetails.push(`Ref: ${pi.quotationReference}`);
     }
 
-    let currentY = this.drawHeader(doc, companyDetails, "PROFORMA INVOICE", rightDetails);
+    let currentY = this.drawHeader(doc, branding, "PROFORMA INVOICE", rightDetails);
     
     currentY = this.drawCustomerSection(doc, "Billed To:", pi.customerName, pi.billingAddress, pi.customerGstin, currentY);
 
@@ -366,15 +387,16 @@ export class DocumentPdfService {
     drawSummaryLine("Grand Total (Rs.):", pi.grandTotal || 0, true);
 
     finalY = Math.max(finalY + 15, summaryY) + 5;
-    this.drawFooter(doc, companyDetails, finalY, true);
+    this.drawFooter(doc, branding, finalY, true);
 
     const fileName = `ProformaInvoice_${pi.piNumber}_${pi.customerName?.replace(/[^a-zA-Z0-9]/g, '_')}.pdf`;
     await PdfAuditService.logAction('Proforma Invoice', pi.piNumber, 'Downloaded');
     doc.save(fileName);
   }
 
-  static async generateGstInvoicePdf(invoice: any, companyDetails: any) {
+  static async generateGstInvoicePdf(invoice: any, companyDetails?: any) {
     const doc = new jsPDF();
+    const branding = this.getBranding(invoice, companyDetails);
     
     if (invoice.status === 'Cancelled') {
       this.addWatermark(doc, "CANCELLED");
@@ -393,7 +415,7 @@ export class DocumentPdfService {
       rightDetails.push(`Place of Supply: ${invoice.placeOfSupply}`);
     }
 
-    let currentY = this.drawHeader(doc, companyDetails, "TAX INVOICE", rightDetails);
+    let currentY = this.drawHeader(doc, branding, "TAX INVOICE", rightDetails);
     
     const isInterState = (invoice.igst || 0) > 0;
     
@@ -527,16 +549,169 @@ export class DocumentPdfService {
     finalY = Math.max(finalY + 15, summaryY) + 5;
     
     // Custom Footer for GST Invoice
-    this.drawFooter(doc, companyDetails, finalY, false);
-    
-    doc.setFontSize(7);
-    doc.setFont("helvetica", "bold");
-    doc.text("Declaration:", 14, finalY + 12);
-    doc.setFont("helvetica", "normal");
-    doc.text("We declare that this invoice shows the actual price of the goods described and that all particulars are true and correct.", 14, finalY + 17);
+    this.drawFooter(doc, branding, finalY, false);
 
-    const fileName = `GSTInvoice_${invoice.invoiceNumber}_${invoice.customerName?.replace(/[^a-zA-Z0-9]/g, '_')}.pdf`;
+    const fileName = `Invoice_${invoice.invoiceNumber}_${invoice.customerName?.replace(/[^a-zA-Z0-9]/g, '_')}.pdf`;
     await PdfAuditService.logAction('GST Invoice', invoice.invoiceNumber, 'Downloaded');
+    doc.save(fileName);
+  }
+
+  static async generateDeliveryChallanPdf(challan: any, companyDetails?: any) {
+    const doc = new jsPDF();
+    const branding = this.getBranding(challan, companyDetails);
+
+    const rightDetails = [
+      `Challan No: ${challan.challanNumber || challan.dcNumber}`,
+      `Date: ${new Date(challan.issueDate || challan.date || Date.now()).toLocaleDateString('en-IN')}`
+    ];
+    if (challan.jobCardNumber) {
+      rightDetails.push(`Job Card: ${challan.jobCardNumber}`);
+    }
+    if (challan.vehicleNumber) {
+      rightDetails.push(`Vehicle No: ${challan.vehicleNumber}`);
+    }
+
+    let currentY = this.drawHeader(doc, branding, "DELIVERY CHALLAN", rightDetails);
+    currentY = this.drawCustomerSection(doc, "Delivered To:", challan.customerName, challan.deliveryAddress || challan.customerAddress || '', challan.customerGstin || '', currentY);
+
+    const tableData: any[] = [];
+    (challan.items || []).forEach((item: any, index: number) => {
+      tableData.push([
+        index + 1,
+        item.productName || item.description || '-',
+        item.specification || item.paperType || '-',
+        item.dispatchQty || item.quantity || 0,
+        item.unit || 'Pcs'
+      ]);
+    });
+
+    autoTable(doc, {
+      startY: currentY,
+      head: [['Sl.', 'Item / Product', 'Specification', 'Quantity', 'Unit']],
+      body: tableData,
+      theme: 'grid',
+      headStyles: { fillColor: [41, 128, 185], textColor: 255, fontStyle: 'bold' },
+      styles: { fontSize: 9, cellPadding: 3 },
+      columnStyles: {
+        0: { cellWidth: 10 },
+        3: { halign: 'center' },
+        4: { halign: 'center' }
+      },
+      alternateRowStyles: { fillColor: [250, 250, 250] },
+      margin: { top: 20 }
+    });
+
+    let finalY = (doc as any).lastAutoTable.finalY + 15;
+    this.drawFooter(doc, branding, finalY, false);
+
+    const fileName = `DeliveryChallan_${challan.challanNumber || challan.dcNumber}.pdf`;
+    await PdfAuditService.logAction('Delivery Challan', challan.challanNumber || challan.dcNumber, 'Downloaded');
+    doc.save(fileName);
+  }
+
+  static async generatePaymentReceiptPdf(receipt: any, companyDetails?: any) {
+    const doc = new jsPDF();
+    const branding = this.getBranding(receipt, companyDetails);
+
+    const rightDetails = [
+      `Receipt No: ${receipt.receiptNumber}`,
+      `Date: ${new Date(receipt.paymentDate || receipt.date || Date.now()).toLocaleDateString('en-IN')}`
+    ];
+    if (receipt.paymentMode) {
+      rightDetails.push(`Mode: ${receipt.paymentMode}`);
+    }
+    if (receipt.transactionRef) {
+      rightDetails.push(`Ref: ${receipt.transactionRef}`);
+    }
+
+    let currentY = this.drawHeader(doc, branding, "PAYMENT RECEIPT", rightDetails);
+    currentY = this.drawCustomerSection(doc, "Received From:", receipt.customerName, receipt.customerAddress || '', '', currentY);
+
+    const tableData: any[] = [[
+      1,
+      receipt.invoiceNumber ? `Payment against Invoice #${receipt.invoiceNumber}` : (receipt.notes || 'Payment Received'),
+      receipt.paymentMode || 'Online/Bank',
+      receipt.transactionRef || '-',
+      (receipt.amount || 0).toFixed(2)
+    ]];
+
+    autoTable(doc, {
+      startY: currentY,
+      head: [['Sl.', 'Description', 'Payment Mode', 'Reference No', 'Amount (Rs.)']],
+      body: tableData,
+      theme: 'grid',
+      headStyles: { fillColor: [41, 128, 185], textColor: 255, fontStyle: 'bold' },
+      styles: { fontSize: 9, cellPadding: 4 },
+      columnStyles: {
+        0: { cellWidth: 10 },
+        4: { halign: 'right' }
+      },
+      alternateRowStyles: { fillColor: [250, 250, 250] },
+      margin: { top: 20 }
+    });
+
+    let finalY = (doc as any).lastAutoTable.finalY + 10;
+
+    doc.setFontSize(9);
+    doc.setFont("helvetica", "bold");
+    doc.text("Amount in Words:", 14, finalY);
+    doc.setFont("helvetica", "normal");
+    doc.text(numberToWordsIndian(receipt.amount || 0), 14, finalY + 5);
+
+    finalY += 15;
+    this.drawFooter(doc, branding, finalY, false);
+
+    const fileName = `PaymentReceipt_${receipt.receiptNumber}.pdf`;
+    await PdfAuditService.logAction('Payment Receipt', receipt.receiptNumber, 'Downloaded');
+    doc.save(fileName);
+  }
+
+  static async generateJobCardPdf(jobCard: any, companyDetails?: any) {
+    const doc = new jsPDF();
+    const branding = this.getBranding(jobCard, companyDetails);
+
+    const rightDetails = [
+      `Job Card No: ${jobCard.jobCardNumber}`,
+      `Date: ${new Date(jobCard.createdAt || Date.now()).toLocaleDateString('en-IN')}`
+    ];
+    if (jobCard.deliveryDate) {
+      rightDetails.push(`Target Delivery: ${new Date(jobCard.deliveryDate).toLocaleDateString('en-IN')}`);
+    }
+
+    let currentY = this.drawHeader(doc, branding, "JOB CARD", rightDetails);
+    currentY = this.drawCustomerSection(doc, "Customer Details:", jobCard.customerName, '', '', currentY);
+
+    const tableData: any[] = [];
+    (jobCard.items || []).forEach((item: any, index: number) => {
+      tableData.push([
+        index + 1,
+        item.productName || item.jobTitle || '-',
+        `${item.quantity || 0} ${item.unit || 'Pcs'}`,
+        item.paperSpecification || item.specification || '-',
+        item.printingDetails || item.processDetails || '-'
+      ]);
+    });
+
+    autoTable(doc, {
+      startY: currentY,
+      head: [['Sl.', 'Job Title / Product', 'Quantity', 'Paper Spec', 'Process Details']],
+      body: tableData,
+      theme: 'grid',
+      headStyles: { fillColor: [41, 128, 185], textColor: 255, fontStyle: 'bold' },
+      styles: { fontSize: 8, cellPadding: 3 },
+      columnStyles: {
+        0: { cellWidth: 10 },
+        2: { halign: 'center' }
+      },
+      alternateRowStyles: { fillColor: [250, 250, 250] },
+      margin: { top: 20 }
+    });
+
+    let finalY = (doc as any).lastAutoTable.finalY + 15;
+    this.drawFooter(doc, branding, finalY, false);
+
+    const fileName = `JobCard_${jobCard.jobCardNumber}.pdf`;
+    await PdfAuditService.logAction('Job Card', jobCard.jobCardNumber, 'Downloaded');
     doc.save(fileName);
   }
 }

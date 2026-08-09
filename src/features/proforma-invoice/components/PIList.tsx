@@ -217,7 +217,7 @@ export default function PIList({ onCreateNew, onViewDetails, onEdit, onConvertTo
             try {
               const { DocumentPdfService } = await import('../../../utils/DocumentPdfService');
               const { CompanySettingsService } = await import('../../../services/CompanySettingsService');
-              const companyDetails = CompanySettingsService.getSettings();
+              const companyDetails = CompanySettingsService.getCompanyBrandingForDocument(selectedPI);
               await DocumentPdfService.generateProformaInvoicePdf(selectedPI, companyDetails);
             } catch (e) {
               console.error(e);

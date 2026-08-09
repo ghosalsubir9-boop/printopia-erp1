@@ -30,15 +30,25 @@ export interface GSTInvoiceItem {
   discount: number; // Item level discount
   taxableAmount: number;
   gstRate: number;
-  itemAmount: number; // Qty * Rate
+  cgst: number;
+  sgst: number;
+  igst: number;
+  itemAmount: number; // Qty * Rate + Taxes (Line Total)
   
   // Tracking quantities for partial invoice
   orderedQty?: number;
   previouslyInvoicedQty?: number;
-
+  
+  // Traceability
+  companyId?: string;
+  customerId?: string;
+  quotationId?: string;
+  proformaInvoiceId?: string;
   sourcePiItemId?: string;
-  sourceQuotationOptionId?: string;
+  productionOrderId?: string;
+  jobCardId?: string;
   sourceDispatchId?: string;
+  sourceDeliveryChallanId?: string;
   sourceDeliveryChallanItemId?: string;
   productId?: string;
 }
@@ -55,20 +65,24 @@ export interface InvoiceAuditLog {
 
 export interface GSTInvoice {
   id: string;
-  invoiceNumber: string; // INV-2026-000001
+  companyId: string;
+  invoiceNumber: string; // INV/2026-27/0001
   invoiceDate: string;
   customerId: string;
   customerName: string;
-  billingAddress: string;
-  shippingAddress: string;
+  customerCode?: string;
+  billingAddress: string; // snapshot
+  shippingAddress: string; // snapshot
+  customerSnapshot?: string; // snapshot of customer details
+  companySnapshot?: string; // snapshot of company details
   gstin: string;
   placeOfSupply: string;
   customerStateCode: string;
   companyStateCode: string;
   linkedPiNumber?: string;
   linkedPiId?: string;
-  linkedDcNumber?: string;
-  linkedDcId?: string;
+  linkedDcNumber?: string; // can be comma separated
+  linkedDcId?: string[];
   salesExecutive: string;
   paymentTerms: string;
   dueDate: string;
@@ -87,6 +101,9 @@ export interface GSTInvoice {
   cgst: number;
   sgst: number;
   igst: number;
+  freightAmount?: number;
+  packingAmount?: number;
+  otherCharges?: number;
   roundOff: number;
   grandTotal: number;
   advanceAdjusted: number;
@@ -112,7 +129,10 @@ export type PaymentStatus =
 
 export interface PaymentReceipt {
   id: string;
+  companyId?: string;
+  companySnapshot?: string;
   receiptNumber: string; // REC-2026-000001
+
   paymentDate: string;
   customerId: string;
   customerName: string;

@@ -416,7 +416,7 @@ export default function InvoiceDetailsView({ invoiceId, onBack, onPrint }: Invoi
               try {
                 const { DocumentPdfService } = await import('../../../utils/DocumentPdfService');
                 const { CompanySettingsService } = await import('../../../services/CompanySettingsService');
-                const companyDetails = CompanySettingsService.getSettings();
+                const companyDetails = CompanySettingsService.getCompanyBrandingForDocument(invoice);
                 await DocumentPdfService.generateGstInvoicePdf(invoice, companyDetails);
               } catch(e) {
                 console.error("PDF generation failed", e);

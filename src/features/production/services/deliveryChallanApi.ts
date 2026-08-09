@@ -135,9 +135,11 @@ export class DeliveryChallanApiService {
     // Use snapshot from first dispatch (which is validated to be the same customer)
     const firstDisp = validatedDispatches[0];
 
+    const { CompanySettingsService } = await import('../../../services/CompanySettingsService');
     const newChallan: DeliveryChallan = {
       ...challan,
       companyId,
+      companySnapshot: JSON.stringify(CompanySettingsService.getSettingsForCompany(companyId)),
       id,
       challanNumber,
       customerId: commonCustomerId,
@@ -154,14 +156,38 @@ export class DeliveryChallanApiService {
       updatedAt: timestamp
     };
 
-    // 3. Link dispatches to this DC (This includes status and tenant validation)
-    await DispatchApiService.linkDeliveryChallan(challan.dispatchIds, id, challanNumber, companyId);
+    const prevChallans = this.getStoredChallans();
+    const prevDispatches = DispatchApiService.getStoredDispatches();
 
-    // 4. Save the DC only after dispatches are linked
-    list.push(newChallan);
-    this.saveChallans(list);
+    try {
+      // 3. Prepare Linked Dispatches (Validation + Transformation, NO COMMIT)
+      const updatedDispatches = await DispatchApiService.linkDeliveryChallan(
+        challan.dispatchIds, 
+        id, 
+        challanNumber, 
+        companyId, 
+        false
+      );
 
-    return newChallan;
+      try {
+        // 4. Commit Delivery Challan
+        const updatedChallans = [...prevChallans, newChallan];
+        this.saveChallans(updatedChallans);
+
+        // 5. Commit Dispatches
+        DispatchApiService.saveDispatches(updatedDispatches);
+      } catch (commitError) {
+        // ROLLBACK: Restore previous states if either write fails
+        this.saveChallans(prevChallans);
+        DispatchApiService.saveDispatches(prevDispatches);
+        throw new Error(`Failed to commit transaction. Delivery Challan creation aborted and rolled back. ${commitError instanceof Error ? commitError.message : String(commitError)}`);
+      }
+
+      return newChallan;
+    } catch (error) {
+      // If linking validation failed or any other error occurred before commits
+      throw error;
+    }
   }
 
   public static async updateTracking(id: string, nextStatus: DeliveryTrackingStatus, remarks: string): Promise<DeliveryChallan> {

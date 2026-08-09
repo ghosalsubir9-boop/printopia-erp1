@@ -21,6 +21,10 @@ export interface TenantCompany {
   state: string;
   stateCode: string;
   pincode: string;
+  pan?: string;
+  phone?: string;
+  website?: string;
+  bankDetails?: any;
   status: TenantStatus;
   plan: TenantPlan;
   activationDate: string;

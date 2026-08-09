@@ -194,6 +194,9 @@ export default function CreateInvoiceForm({ onBack, onSuccess }: CreateInvoiceFo
         discount: 0,
         taxableAmount: itemTaxable,
         gstRate: piItem.gstRate || 18,
+        cgst: 0,
+        sgst: 0,
+        igst: 0,
         itemAmount: amt,
         orderedQty,
         previouslyInvoicedQty,
@@ -314,12 +317,15 @@ export default function CreateInvoiceForm({ onBack, onSuccess }: CreateInvoiceFo
         discount: 0,
         taxableAmount: amt,
         gstRate: 18,
+        cgst: 0,
+        sgst: 0,
+        igst: 0,
         itemAmount: amt,
         orderedQty,
         previouslyInvoicedQty,
         sourceDeliveryChallanItemId: disp.id, // Use individual Delivery Challan Item ID
         sourcePiItemId,
-        sourceQuotationOptionId,
+        /*sourceQuotationOptionId,*/
         productId
       });
     }
@@ -340,7 +346,10 @@ export default function CreateInvoiceForm({ onBack, onSuccess }: CreateInvoiceFo
       discount: 0,
       taxableAmount: 1000,
       gstRate: 18,
-      itemAmount: 1000,
+      cgst: 0,
+      sgst: 0,
+      igst: 0,
+      itemAmount: 1180,
       orderedQty: 1000,
       previouslyInvoicedQty: 0
     };
