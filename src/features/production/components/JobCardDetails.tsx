@@ -55,6 +55,7 @@ import {
 import { JobCard, JobCardStatus, JobCardItem, JobCardArtwork, JobCardTimeLog, JobCardQCDetails, JobCardMaterialConsumption, POPriority, ArtworkStatus, OperatorAction } from '../types';
 import { JobCardApiService, getNextAllowedStages } from '../services/jobCardApi';
 import { CompanySettingsService } from '../../../services/CompanySettingsService';
+import DocumentPdfPreviewModal from '../../../components/DocumentPdfPreviewModal';
 import { COMPANY_SETTINGS } from '../../../services/CompanySettingsService';
 import { BarcodeGenerator, QRCodeGenerator } from './BarcodeQRGenerator';
 import { SheetLayoutView } from '../../estimate/job-entry/components/SheetLayoutView';
@@ -105,6 +106,7 @@ export default function JobCardDetails({ jobCard, currentRole, onBack, onUpdate 
   const [consumptionDialogOpen, setConsumptionDialogOpen] = useState(false);
   const [qcDialogOpen, setQcDialogOpen] = useState(false);
   const [statusDialogOpen, setStatusDialogOpen] = useState(false);
+  const [pdfModalOpen, setPdfModalOpen] = useState(false);
 
   // Artwork fields
   const [artVersion, setArtVersion] = useState(jobCard.artwork?.artworkVersion || 'v1.0');
@@ -324,13 +326,27 @@ export default function JobCardDetails({ jobCard, currentRole, onBack, onUpdate 
           <Button
             variant="outlined"
             startIcon={<PrintIcon />}
-            onClick={() => setActiveTab(1)}
+            onClick={() => setPdfModalOpen(true)}
             color="primary"
           >
-            A4 Print Layout
+            Preview / Print PDF
+          </Button>
+          <Button
+            variant="outlined"
+            onClick={() => setActiveTab(1)}
+            color="inherit"
+          >
+            A4 Web View
           </Button>
         </Box>
       </Box>
+
+      <DocumentPdfPreviewModal
+        open={pdfModalOpen}
+        onClose={() => setPdfModalOpen(false)}
+        documentType="job_card"
+        documentData={jobCard}
+      />
 
       {error && <Alert severity="error" sx={{ mb: 3, display: 'flex', alignItems: 'center' }} onClose={() => setError(null)}>{error}</Alert>}
       {success && <Alert severity="success" sx={{ mb: 3, display: 'flex', alignItems: 'center' }} onClose={() => setSuccess(null)}>{success}</Alert>}

@@ -388,20 +388,26 @@ export default function InvoicePrintPreview({ invoiceId, onBack }: InvoicePrintP
               </TableHead>
               <TableBody>
                 {invoice.items.map((item) => {
-                  const itemTax = item.taxableAmount * (item.gstRate / 100);
+                  const gstRate = item.gstRate || 18;
+                  const halfRate = gstRate / 2;
+                  const itemCgst = item.cgst !== undefined && item.cgst !== null ? item.cgst : (sameState ? (item.taxableAmount * (gstRate / 100)) / 2 : 0);
+                  const itemSgst = item.sgst !== undefined && item.sgst !== null ? item.sgst : (sameState ? (item.taxableAmount * (gstRate / 100)) / 2 : 0);
+                  const itemIgst = item.igst !== undefined && item.igst !== null ? item.igst : (!sameState ? item.taxableAmount * (gstRate / 100) : 0);
+                  const totalItemTax = itemCgst + itemSgst + itemIgst;
+
                   return (
                     <TableRow key={item.id}>
                       <TableCell>{item.hsnSac}</TableCell>
-                      <TableCell align="right">₹{item.taxableAmount.toLocaleString()}</TableCell>
+                      <TableCell align="right">₹{item.taxableAmount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</TableCell>
                       {sameState ? (
                         <>
-                          <TableCell align="right">9% (₹{(itemTax / 2).toFixed(1)})</TableCell>
-                          <TableCell align="right">9% (₹{(itemTax / 2).toFixed(1)})</TableCell>
+                          <TableCell align="right">{halfRate}% (₹{itemCgst.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })})</TableCell>
+                          <TableCell align="right">{halfRate}% (₹{itemSgst.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })})</TableCell>
                         </>
                       ) : (
-                        <TableCell align="right">18% (₹{itemTax.toFixed(1)})</TableCell>
+                        <TableCell align="right">{gstRate}% (₹{itemIgst.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })})</TableCell>
                       )}
-                      <TableCell align="right">₹{itemTax.toLocaleString()}</TableCell>
+                      <TableCell align="right">₹{totalItemTax.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</TableCell>
                     </TableRow>
                   );
                 })}
@@ -442,23 +448,23 @@ export default function InvoicePrintPreview({ invoiceId, onBack }: InvoicePrintP
               {sameState ? (
                 <>
                   <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                    <Typography variant="caption" sx={{ color: 'black' }}>Central Tax (CGST 9%):</Typography>
+                    <Typography variant="caption" sx={{ color: 'black' }}>Central Tax (CGST):</Typography>
                     <Typography variant="caption" sx={{ fontWeight: 'bold', fontFamily: 'monospace', color: 'black' }}>
-                      ₹{invoice.cgst.toLocaleString()}
+                      ₹{invoice.cgst.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                     </Typography>
                   </Box>
                   <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                    <Typography variant="caption" sx={{ color: 'black' }}>State Tax (SGST 9%):</Typography>
+                    <Typography variant="caption" sx={{ color: 'black' }}>State Tax (SGST):</Typography>
                     <Typography variant="caption" sx={{ fontWeight: 'bold', fontFamily: 'monospace', color: 'black' }}>
-                      ₹{invoice.sgst.toLocaleString()}
+                      ₹{invoice.sgst.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                     </Typography>
                   </Box>
                 </>
               ) : (
                 <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <Typography variant="caption" sx={{ color: 'black' }}>Integrated Tax (IGST 18%):</Typography>
+                  <Typography variant="caption" sx={{ color: 'black' }}>Integrated Tax (IGST):</Typography>
                   <Typography variant="caption" sx={{ fontWeight: 'bold', fontFamily: 'monospace', color: 'black' }}>
-                    ₹{invoice.igst.toLocaleString()}
+                    ₹{invoice.igst.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   </Typography>
                 </Box>
               )}

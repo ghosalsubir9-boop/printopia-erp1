@@ -18,7 +18,7 @@ import { CustomerMasterService } from '../customer-master/services/mockApi';
 
 import { GstUtils } from '../gst-management/utils/gstUtils';
 import { AuthService } from '../../services/authService';
-import { toPaise, fromPaise, addMoney, subtractMoney, compareMoney } from '../../utils/moneyUtils';
+import { toPaise, fromPaise } from '../../utils/moneyUtils';
 import { AutoPostingEngine } from '../finance/services/AutoPostingEngine';
 import { CompanySettingsService } from '../../services/CompanySettingsService';
 
@@ -39,26 +39,153 @@ export class BillingApiService {
     }
   }
 
-  // --- GST INVOICES API ---
-  public static async getInvoices(): Promise<GSTInvoice[]> {
+  private static getAllInvoicesRaw(): GSTInvoice[] {
     this.initStorage();
     const data = localStorage.getItem(STORAGE_INVOICES);
-    const allInvoices = data ? JSON.parse(data) as GSTInvoice[] : [];
+    return data ? (JSON.parse(data) as GSTInvoice[]) : [];
+  }
+
+  private static saveAllInvoicesRaw(invoices: GSTInvoice[]): void {
+    localStorage.setItem(STORAGE_INVOICES, JSON.stringify(invoices));
+  }
+
+  private static getAllReceiptsRaw(): PaymentReceipt[] {
+    this.initStorage();
+    const data = localStorage.getItem(STORAGE_RECEIPTS);
+    return data ? (JSON.parse(data) as PaymentReceipt[]) : [];
+  }
+
+  private static saveAllReceiptsRaw(receipts: PaymentReceipt[]): void {
+    localStorage.setItem(STORAGE_RECEIPTS, JSON.stringify(receipts));
+  }
+
+  private static getAllCreditNotesRaw(): CreditNote[] {
+    this.initStorage();
+    const data = localStorage.getItem(STORAGE_CREDIT_NOTES);
+    return data ? (JSON.parse(data) as CreditNote[]) : [];
+  }
+
+  private static saveAllCreditNotesRaw(creditNotes: CreditNote[]): void {
+    localStorage.setItem(STORAGE_CREDIT_NOTES, JSON.stringify(creditNotes));
+  }
+
+  /**
+   * Decimal-safe calculation helper for GST invoice items and totals.
+   */
+  public static recalculateInvoiceItemsAndTotals(
+    items: GSTInvoiceItem[],
+    invoiceDiscount: number = 0,
+    customerStateCode: string = '',
+    companyStateCode: string = ''
+  ) {
+    const isIgst = Boolean(customerStateCode && companyStateCode && customerStateCode !== companyStateCode);
+
+    const baseItems = items.map(item => {
+      const qty = item.quantity || 0;
+      const rate = item.ratePerPiece || 0;
+      const disc = item.discount || 0;
+      const grossPaise = toPaise(qty * rate);
+      const discPaise = toPaise(disc);
+      const baseTaxablePaise = Math.max(0, grossPaise - discPaise);
+      return {
+        ...item,
+        grossPaise,
+        discPaise,
+        baseTaxablePaise
+      };
+    });
+
+    const sumBaseTaxablePaise = baseItems.reduce((sum, item) => sum + item.baseTaxablePaise, 0);
+    const invDiscPaise = toPaise(invoiceDiscount);
+
+    let subtotalPaise = 0;
+    let itemDiscPaiseTotal = 0;
+    let taxablePaiseTotal = 0;
+    let cgstPaiseTotal = 0;
+    let sgstPaiseTotal = 0;
+    let igstPaiseTotal = 0;
+
+    const recalculatedItems: GSTInvoiceItem[] = baseItems.map(item => {
+      const invDiscSharePaise = sumBaseTaxablePaise > 0
+        ? Math.round((item.baseTaxablePaise / sumBaseTaxablePaise) * invDiscPaise)
+        : 0;
+
+      const finalTaxablePaise = Math.max(0, item.baseTaxablePaise - invDiscSharePaise);
+      const gstRate = item.gstRate ?? 18;
+      const taxPaise = Math.round(finalTaxablePaise * (gstRate / 100));
+
+      let cgstPaise = 0;
+      let sgstPaise = 0;
+      let igstPaise = 0;
+
+      if (isIgst) {
+        igstPaise = taxPaise;
+      } else {
+        cgstPaise = Math.round(taxPaise / 2);
+        sgstPaise = taxPaise - cgstPaise;
+      }
+
+      const itemAmountPaise = finalTaxablePaise + cgstPaise + sgstPaise + igstPaise;
+
+      subtotalPaise += item.grossPaise;
+      itemDiscPaiseTotal += item.discPaise;
+      taxablePaiseTotal += finalTaxablePaise;
+      cgstPaiseTotal += cgstPaise;
+      sgstPaiseTotal += sgstPaise;
+      igstPaiseTotal += igstPaise;
+
+      return {
+        ...item,
+        taxableAmount: fromPaise(finalTaxablePaise),
+        cgst: fromPaise(cgstPaise),
+        sgst: fromPaise(sgstPaise),
+        igst: fromPaise(igstPaise),
+        itemAmount: fromPaise(itemAmountPaise)
+      };
+    });
+
+    const subtotal = fromPaise(subtotalPaise);
+    const itemDiscount = fromPaise(itemDiscPaiseTotal);
+    const taxableAmount = fromPaise(taxablePaiseTotal);
+    const cgst = fromPaise(cgstPaiseTotal);
+    const sgst = fromPaise(sgstPaiseTotal);
+    const igst = fromPaise(igstPaiseTotal);
+
+    const rawTotalPaise = taxablePaiseTotal + cgstPaiseTotal + sgstPaiseTotal + igstPaiseTotal;
+    const roundedGrandTotalPaise = Math.round(rawTotalPaise / 100) * 100;
+    const roundOff = fromPaise(roundedGrandTotalPaise - rawTotalPaise);
+    const grandTotal = fromPaise(roundedGrandTotalPaise);
+
+    return {
+      items: recalculatedItems,
+      subtotal,
+      itemDiscount,
+      taxableAmount,
+      cgst,
+      sgst,
+      igst,
+      roundOff,
+      grandTotal
+    };
+  }
+
+  // --- GST INVOICES API ---
+  public static async getInvoices(): Promise<GSTInvoice[]> {
     const companyId = AuthService.requireCurrentCompanyId();
+    const allInvoices = this.getAllInvoicesRaw();
     return allInvoices.filter(inv => inv.companyId === companyId);
   }
 
   public static async getInvoiceById(id: string): Promise<GSTInvoice | null> {
-    const list = await this.getInvoices();
-    return list.find(inv => inv.id === id) || null;
+    const companyId = AuthService.requireCurrentCompanyId();
+    const allInvoices = this.getAllInvoicesRaw();
+    return allInvoices.find(inv => inv.id === id && inv.companyId === companyId) || null;
   }
 
-  
   public static async createInvoiceFromDeliveryChallans(
     challanIds: string[],
     invoicedQuantities: Record<string, number>
   ): Promise<GSTInvoice> {
-    this.initStorage();
     const companyId = AuthService.requireCurrentCompanyId();
     const user = AuthService.getCurrentUser();
     if (!user) throw new Error('Authentication required.');
@@ -86,10 +213,11 @@ export class BillingApiService {
       throw new Error('Access Denied: One or more Challans belong to another company.');
     }
 
-    const invoices = await this.getInvoices();
-    const activeInvoices = invoices.filter(i => i.status !== 'Cancelled' && i.companyId === companyId);
+    const allInvoices = this.getAllInvoicesRaw();
+    const activeTenantInvoices = allInvoices.filter(i => i.companyId === companyId && i.status !== 'Cancelled');
+    
     const invoicedQtyByDcItemId: Record<string, number> = {};
-    for (const inv of activeInvoices) {
+    for (const inv of activeTenantInvoices) {
       for (const item of inv.items) {
         if (item.sourceDeliveryChallanItemId) {
           invoicedQtyByDcItemId[item.sourceDeliveryChallanItemId] = (invoicedQtyByDcItemId[item.sourceDeliveryChallanItemId] || 0) + item.quantity;
@@ -119,7 +247,7 @@ export class BillingApiService {
           productId: dcItem.productId,
           productName: dcItem.productName,
           description: '',
-                    quantity: requestedQty,
+          quantity: requestedQty,
           unit: 'Nos',
           hsnSac: '',
           ratePerPiece: 0,
@@ -157,80 +285,49 @@ export class BillingApiService {
     const companyStateCode = settings.stateCode || '27';
     let customerStateCode = '';
     
-    // Attempt to extract state code from billing address or GSTIN
     const firstGstin = customer.gstin;
     if (firstGstin && firstGstin.length >= 2) {
       customerStateCode = firstGstin.substring(0, 2);
     } else {
-      customerStateCode = companyStateCode; // default to same state if unknown
+      customerStateCode = companyStateCode;
     }
-
-    const isIgst = companyStateCode !== customerStateCode;
-
-    let subtotalPaise = 0;
-    let cgstPaise = 0;
-    let sgstPaise = 0;
-    let igstPaise = 0;
 
     for (const item of newItems) {
       if (item.proformaInvoiceId) {
         const pi = pis.find(p => p?.id === item.proformaInvoiceId);
         if (pi) {
-          const piItem = pi.items.find((i: any) => i.quotationOptionId === item.quotationId || i.productId === item.productId || (i.productName === item.productName ));
+          const piItem = pi.items.find((i: any) => i.quotationOptionId === item.quotationId || i.productId === item.productId || (i.productName === item.productName));
           if (piItem) {
             item.description = piItem.description || '';
             item.unit = piItem.unit || 'Nos';
             item.hsnSac = piItem.hsnCode || '';
             item.ratePerPiece = piItem.unitRate || piItem.rate || 0;
-            item.discount = piItem.discountAmount || 0; // we might want to scale discount based on qty
+            item.discount = piItem.discountAmount || 0;
             item.gstRate = piItem.gstRate || 18;
           }
         }
       }
-
-      const taxableValue = Math.max(0, (item.quantity * item.ratePerPiece) - item.discount);
-      item.taxableAmount = taxableValue;
-      
-      const taxPaise = Math.round(toPaise(taxableValue) * (item.gstRate / 100));
-      
-      if (isIgst) {
-        item.igst = fromPaise(taxPaise);
-        item.cgst = 0;
-        item.sgst = 0;
-      } else {
-        const half = Math.round(taxPaise / 2);
-        item.cgst = fromPaise(half);
-        item.sgst = fromPaise(taxPaise - half);
-        item.igst = 0;
-      }
-      item.itemAmount = item.taxableAmount + item.cgst + item.sgst + item.igst;
-
-      subtotalPaise += toPaise(item.taxableAmount);
-      cgstPaise += toPaise(item.cgst);
-      sgstPaise += toPaise(item.sgst);
-      igstPaise += toPaise(item.igst);
     }
 
+    const calc = this.recalculateInvoiceItemsAndTotals(newItems, 0, customerStateCode, companyStateCode);
+
+    const tenantInvoices = allInvoices.filter(i => i.companyId === companyId);
     const currentYear = new Date().getFullYear();
     const nextYear = String(currentYear + 1).slice(2);
     const fyPrefix = `INV/${currentYear}-${nextYear}/`;
-    const sameYear = invoices.filter(o => o.invoiceNumber?.startsWith(fyPrefix) && o.companyId === companyId);
+    const sameYear = tenantInvoices.filter(o => o.invoiceNumber?.startsWith(fyPrefix));
     
     let nextSeq = sameYear.length + 1;
     let invoiceNumber = '';
     while (true) {
       const trialNumber = `${fyPrefix}${String(nextSeq).padStart(4, '0')}`;
-      const collision = invoices.some(i => i.invoiceNumber === trialNumber && i.companyId === companyId);
+      const collision = tenantInvoices.some(i => i.invoiceNumber === trialNumber);
       if (!collision) {
         invoiceNumber = trialNumber;
         break;
       }
       nextSeq++;
     }
-
-    const grandTotalPaise = subtotalPaise + cgstPaise + sgstPaise + igstPaise;
-    const roundOff = Math.round(grandTotalPaise / 100) * 100 - grandTotalPaise;
-    const finalTotal = grandTotalPaise + roundOff;
 
     const newInvoice: GSTInvoice = {
       id: `inv-${Date.now()}`,
@@ -254,20 +351,20 @@ export class BillingApiService {
       paymentTerms: 'Immediate',
       dueDate: new Date().toISOString().split('T')[0],
       status: 'Draft',
-      items: newItems,
-      subtotal: fromPaise(subtotalPaise),
-      itemDiscount: 0,
+      items: calc.items,
+      subtotal: calc.subtotal,
+      itemDiscount: calc.itemDiscount,
       invoiceDiscount: 0,
-      taxableAmount: fromPaise(subtotalPaise),
-      cgst: fromPaise(cgstPaise),
-      sgst: fromPaise(sgstPaise),
-      igst: fromPaise(igstPaise),
-      roundOff: fromPaise(roundOff),
-      grandTotal: fromPaise(finalTotal),
+      taxableAmount: calc.taxableAmount,
+      cgst: calc.cgst,
+      sgst: calc.sgst,
+      igst: calc.igst,
+      roundOff: calc.roundOff,
+      grandTotal: calc.grandTotal,
       advanceAdjusted: 0,
-      netPayable: fromPaise(finalTotal),
+      netPayable: calc.grandTotal,
       amountReceived: 0,
-      balanceDue: fromPaise(finalTotal),
+      balanceDue: calc.grandTotal,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
       createdBy: user.userName,
@@ -284,27 +381,50 @@ export class BillingApiService {
       }]
     };
 
-    invoices.push(newInvoice);
-    localStorage.setItem(STORAGE_INVOICES, JSON.stringify(invoices));
+    allInvoices.push(newInvoice);
+    this.saveAllInvoicesRaw(allInvoices);
     return newInvoice;
   }
 
-
   public static async saveInvoice(invoice: Partial<GSTInvoice>): Promise<GSTInvoice> {
-    this.initStorage();
     const user = AuthService.getCurrentUser();
     if (!user) throw new Error('Authentication required.');
     
     const companyId = AuthService.requireCurrentCompanyId();
-
-    const data = localStorage.getItem(STORAGE_INVOICES);
-    const allInvoices = data ? JSON.parse(data) as GSTInvoice[] : [];
+    const allInvoices = this.getAllInvoicesRaw();
     const tenantInvoices = allInvoices.filter(i => i.companyId === companyId);
-    
     const timestamp = new Date().toISOString();
 
     if (invoice.invoiceDate && GstUtils.isPeriodLocked(invoice.invoiceDate)) {
       throw new Error(`Cannot create or edit invoice for date ${invoice.invoiceDate} as the GST period is Locked/Filed.`);
+    }
+
+    // Recalculate item level GST & totals if items are provided
+    let recalculatedFields: Partial<GSTInvoice> = {};
+    if (invoice.items && invoice.items.length > 0) {
+      const calc = this.recalculateInvoiceItemsAndTotals(
+        invoice.items,
+        invoice.invoiceDiscount || 0,
+        invoice.customerStateCode || '',
+        invoice.companyStateCode || ''
+      );
+      const advanceAdjusted = invoice.advanceAdjusted || 0;
+      const netPayable = Math.max(0, calc.grandTotal - advanceAdjusted);
+
+      recalculatedFields = {
+        items: calc.items,
+        subtotal: calc.subtotal,
+        itemDiscount: calc.itemDiscount,
+        taxableAmount: calc.taxableAmount,
+        cgst: calc.cgst,
+        sgst: calc.sgst,
+        igst: calc.igst,
+        roundOff: calc.roundOff,
+        grandTotal: calc.grandTotal,
+        advanceAdjusted,
+        netPayable,
+        balanceDue: Math.max(0, netPayable - (invoice.amountReceived || 0))
+      };
     }
 
     if (invoice.id) {
@@ -319,6 +439,7 @@ export class BillingApiService {
         const updated: GSTInvoice = {
           ...existing,
           ...invoice,
+          ...recalculatedFields,
           companyId, // force tenant
           updatedAt: timestamp,
           auditHistory: [
@@ -334,8 +455,9 @@ export class BillingApiService {
             }
           ]
         } as GSTInvoice;
+
         allInvoices[index] = updated;
-        localStorage.setItem(STORAGE_INVOICES, JSON.stringify(allInvoices));
+        this.saveAllInvoicesRaw(allInvoices);
         return updated;
       }
     }
@@ -370,20 +492,21 @@ export class BillingApiService {
       }
     }
 
-    const newId = `inv-${Date.now()}`;
+    const newId = `inv-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
     const newInvoice: GSTInvoice = {
       ...invoice,
+      ...recalculatedFields,
       id: newId,
       companyId, // force tenant
       invoiceNumber,
-      status: invoice.status || 'Draft',
+      status: 'Draft', // Save always initializes or remains as Draft
       createdAt: timestamp,
       updatedAt: timestamp,
       createdBy: user.userName,
       createdByUserId: user.userId,
       createdByRole: user.role,
       amountReceived: 0,
-      balanceDue: invoice.netPayable || 0,
+      balanceDue: recalculatedFields.netPayable ?? invoice.netPayable ?? 0,
       auditHistory: [
         {
           id: `ah-${Date.now()}`,
@@ -398,24 +521,85 @@ export class BillingApiService {
     } as GSTInvoice;
 
     allInvoices.push(newInvoice);
-    localStorage.setItem(STORAGE_INVOICES, JSON.stringify(allInvoices));
+    this.saveAllInvoicesRaw(allInvoices);
     return newInvoice;
   }
 
   public static async finalizeInvoice(id: string): Promise<GSTInvoice> {
-    this.initStorage();
+    const companyId = AuthService.requireCurrentCompanyId();
     const user = AuthService.getCurrentUser();
     if (!user) throw new Error('Authentication required.');
 
-    const invoices = await this.getInvoices();
-    const index = invoices.findIndex(i => i.id === id);
-    if (index === -1) throw new Error('Invoice not found');
+    const allInvoices = this.getAllInvoicesRaw();
+    const index = allInvoices.findIndex(i => i.id === id && i.companyId === companyId);
+    if (index === -1) throw new Error('Invoice not found or access denied');
 
-    const inv = invoices[index];
+    const inv = allInvoices[index];
     if (GstUtils.isPeriodLocked(inv.invoiceDate)) {
       throw new Error(`Cannot finalize invoice. The GST period for ${inv.invoiceDate} is Locked/Filed.`);
     }
     if (inv.status !== 'Draft') throw new Error('Only Draft invoices can be finalized');
+
+    // Requirement 7: Quantity validation before finalization
+    const activeTenantInvoices = allInvoices.filter(i => i.companyId === companyId && i.id !== id && i.status !== 'Cancelled');
+    const dcQtyMap: Record<string, number> = {};
+    const piQtyMap: Record<string, number> = {};
+    for (const activeInv of activeTenantInvoices) {
+      for (const item of activeInv.items) {
+        if (item.sourceDeliveryChallanItemId) {
+          dcQtyMap[item.sourceDeliveryChallanItemId] = (dcQtyMap[item.sourceDeliveryChallanItemId] || 0) + item.quantity;
+        }
+        if (item.sourcePiItemId) {
+          piQtyMap[item.sourcePiItemId] = (piQtyMap[item.sourcePiItemId] || 0) + item.quantity;
+        }
+      }
+    }
+
+    let allChallans: any[] = [];
+    try {
+      allChallans = await DeliveryChallanApiService.getChallans();
+    } catch {
+      allChallans = [];
+    }
+
+    let allApprovedPIs: any[] = [];
+    try {
+      allApprovedPIs = await PIApiService.getInvoices();
+    } catch {
+      allApprovedPIs = [];
+    }
+
+    for (const item of inv.items) {
+      if (item.sourceDeliveryChallanItemId) {
+        const prevInvoiced = dcQtyMap[item.sourceDeliveryChallanItemId] || 0;
+        let dcAvailableQty = item.orderedQty;
+        for (const dc of allChallans) {
+          const found = dc.items?.find((i: any) => i.id === item.sourceDeliveryChallanItemId);
+          if (found) {
+            dcAvailableQty = found.currentDispatchQuantity;
+            break;
+          }
+        }
+        if (dcAvailableQty !== undefined && (prevInvoiced + item.quantity) > dcAvailableQty) {
+          throw new Error(`Cannot finalize invoice: total invoiced quantity (${prevInvoiced + item.quantity}) exceeds available quantity (${dcAvailableQty}) for item ${item.productName}.`);
+        }
+      }
+
+      if (item.sourcePiItemId) {
+        const prevInvoiced = piQtyMap[item.sourcePiItemId] || 0;
+        let piOrderedQty = item.orderedQty;
+        for (const pi of allApprovedPIs) {
+          const found = pi.items?.find((i: any) => i.id === item.sourcePiItemId);
+          if (found) {
+            piOrderedQty = found.quantity;
+            break;
+          }
+        }
+        if (piOrderedQty !== undefined && piOrderedQty > 0 && (prevInvoiced + item.quantity) > piOrderedQty) {
+          throw new Error(`Cannot finalize invoice: total invoiced quantity (${prevInvoiced + item.quantity}) exceeds ordered quantity (${piOrderedQty}) for item ${item.productName}.`);
+        }
+      }
+    }
 
     const timestamp = new Date().toISOString();
     inv.status = 'Finalized';
@@ -430,8 +614,8 @@ export class BillingApiService {
       remarks: 'Invoice finalized. Numbers locked for customer distribution.'
     });
 
-    invoices[index] = inv;
-    localStorage.setItem(STORAGE_INVOICES, JSON.stringify(invoices));
+    allInvoices[index] = inv;
+    this.saveAllInvoicesRaw(allInvoices);
 
     try {
       AutoPostingEngine.postTransaction({
@@ -448,22 +632,22 @@ export class BillingApiService {
         roundOffAmount: inv.roundOff
       });
     } catch (e: unknown) {
-       console.warn('Auto posting failed:', e);
+      console.warn('Auto posting failed:', e);
     }
 
     return inv;
   }
 
   public static async cancelInvoice(id: string, reason: string): Promise<GSTInvoice> {
-    this.initStorage();
+    const companyId = AuthService.requireCurrentCompanyId();
     const user = AuthService.getCurrentUser();
     if (!user) throw new Error('Authentication required.');
 
-    const invoices = await this.getInvoices();
-    const index = invoices.findIndex(i => i.id === id);
-    if (index === -1) throw new Error('Invoice not found');
+    const allInvoices = this.getAllInvoicesRaw();
+    const index = allInvoices.findIndex(i => i.id === id && i.companyId === companyId);
+    if (index === -1) throw new Error('Invoice not found or access denied');
 
-    const inv = invoices[index];
+    const inv = allInvoices[index];
     if (GstUtils.isPeriodLocked(inv.invoiceDate)) {
       throw new Error(`Cannot cancel invoice. The GST period for ${inv.invoiceDate} is Locked/Filed.`);
     }
@@ -480,13 +664,13 @@ export class BillingApiService {
       remarks: `Invoice cancelled. Reason: ${reason}`
     });
 
-    invoices[index] = inv;
-    localStorage.setItem(STORAGE_INVOICES, JSON.stringify(invoices));
+    allInvoices[index] = inv;
+    this.saveAllInvoicesRaw(allInvoices);
 
     try {
       AutoPostingEngine.reverseTransaction('Billing', inv.id, reason);
     } catch (e: unknown) {
-       console.warn('Auto reversal failed:', e);
+      console.warn('Auto reversal failed:', e);
     }
 
     return inv;
@@ -494,30 +678,23 @@ export class BillingApiService {
 
   // --- PAYMENT RECEIPTS API ---
   public static async getReceipts(): Promise<PaymentReceipt[]> {
-    this.initStorage();
-    const data = localStorage.getItem(STORAGE_RECEIPTS);
-    return data ? JSON.parse(data) : [];
+    const companyId = AuthService.requireCurrentCompanyId();
+    const all = this.getAllReceiptsRaw();
+    return all.filter(r => r.companyId === companyId);
   }
 
   public static async saveReceipt(receipt: Omit<PaymentReceipt, 'id' | 'receiptNumber' | 'createdAt' | 'createdBy' | 'createdByUserId' | 'createdByRole'>): Promise<PaymentReceipt> {
-    this.initStorage();
+    const companyId = AuthService.requireCurrentCompanyId();
     const user = AuthService.getCurrentUser();
     if (!user) throw new Error('Authentication required.');
 
-    // PAYMENT PERIOD LOCK EXEMPTION:
-    // Do not block a Payment Receipt merely because its payment date falls in a Filed or Locked GST period.
-    // Payment Receipt does not change output GST liability, so it is safe to allow payments against
-    // old or filed invoices while fully preserving original invoice tax data.
-    // However, we continue to block other GST-liability-changing actions (invoice edit/cancellation, credit/debit notes, etc).
+    const allReceipts = this.getAllReceiptsRaw();
+    const tenantReceipts = allReceipts.filter(r => r.companyId === companyId);
 
-    const receipts = await this.getReceipts();
-    
-    // Validate amount components (non-negative)
     if (receipt.amount < 0 || (receipt.tdsAmount || 0) < 0 || (receipt.adjustmentAmount || 0) < 0) {
       throw new Error('None of the payment, TDS, or adjustment components can be negative.');
     }
 
-    // Decimal-safe money logic using integer paise
     const settlementValuePaise = toPaise(receipt.amount) + toPaise(receipt.tdsAmount || 0) + toPaise(receipt.adjustmentAmount || 0);
     const settlementValue = fromPaise(settlementValuePaise);
 
@@ -525,34 +702,31 @@ export class BillingApiService {
       throw new Error('Total Settlement Value (Amount Received + TDS + Adjustment) must be positive and greater than zero.');
     }
 
-    const invoices = await this.getInvoices();
-    const invoiceIndex = invoices.findIndex(i => i.id === receipt.invoiceId);
-    if (invoiceIndex === -1) throw new Error('Linked GST Invoice not found');
+    const allInvoices = this.getAllInvoicesRaw();
+    const invoiceIndex = allInvoices.findIndex(i => i.id === receipt.invoiceId && i.companyId === companyId);
+    if (invoiceIndex === -1) throw new Error('Linked GST Invoice not found or access denied');
 
-    const invoice = invoices[invoiceIndex];
+    const invoice = allInvoices[invoiceIndex];
     if (invoice.status === 'Cancelled') throw new Error('Cannot apply payment to a cancelled invoice');
 
     if (settlementValuePaise > toPaise(invoice.balanceDue)) {
       throw new Error(`Total Settlement Value (₹${settlementValue.toFixed(2)}) cannot exceed the invoice balance due (₹${invoice.balanceDue.toFixed(2)}).`);
     }
 
-    // Prevent duplicate receipt references from same form
-    const isDup = receipts.some(r => r.transactionReference && r.transactionReference === receipt.transactionReference);
+    const isDup = tenantReceipts.some(r => r.transactionReference && r.transactionReference === receipt.transactionReference);
     if (isDup && receipt.transactionReference) {
       throw new Error(`Duplicate transaction reference ${receipt.transactionReference} detected.`);
     }
 
-    // Auto receipt number: REC-2026-000001
     const currentYear = new Date().getFullYear();
-    const sameYear = receipts.filter(o => o.receiptNumber.startsWith(`REC-${currentYear}-`));
+    const sameYear = tenantReceipts.filter(o => o.receiptNumber.startsWith(`REC-${currentYear}-`));
     let nextSeq = sameYear.length + 1;
     let receiptNumber = `REC-${currentYear}-${String(nextSeq).padStart(6, '0')}`;
-    while (receipts.some(r => r.receiptNumber === receiptNumber)) {
+    while (tenantReceipts.some(r => r.receiptNumber === receiptNumber)) {
       nextSeq++;
       receiptNumber = `REC-${currentYear}-${String(nextSeq).padStart(6, '0')}`;
     }
 
-    const companyId = AuthService.requireCurrentCompanyId();
     const settings = CompanySettingsService.getCompanyBrandingForDocument({ companyId });
 
     const timestamp = new Date().toISOString();
@@ -579,17 +753,16 @@ export class BillingApiService {
       createdByRole: user.role
     };
 
-    receipts.push(newReceipt);
-    localStorage.setItem(STORAGE_RECEIPTS, JSON.stringify(receipts));
+    allReceipts.push(newReceipt);
+    this.saveAllReceiptsRaw(allReceipts);
 
-    // Update invoice financial indicators
     const currentTotalReceivedPaise = toPaise(invoice.amountReceived) + settlementValuePaise;
     const currentTotalReceived = fromPaise(currentTotalReceivedPaise);
 
     const netPayablePaise = toPaise(invoice.netPayable);
     const currentBalanceDuePaise = Math.max(0, netPayablePaise - currentTotalReceivedPaise);
     const currentBalanceDue = fromPaise(currentBalanceDuePaise);
-    
+
     let newStatus: InvoiceStatus = invoice.status;
     if (currentBalanceDuePaise <= 0) {
       newStatus = 'Paid';
@@ -597,7 +770,6 @@ export class BillingApiService {
       newStatus = 'Partially Paid';
     }
 
-    // Check if overdue
     if (newStatus !== 'Paid' && new Date(invoice.dueDate) < new Date()) {
       newStatus = 'Overdue';
     }
@@ -616,7 +788,8 @@ export class BillingApiService {
       remarks: `Receipt ${receiptNumber} applied. Settlement Value: ₹${settlementValue.toLocaleString()} (Received: ₹${receipt.amount.toLocaleString()}, TDS: ₹${(receipt.tdsAmount || 0).toLocaleString()}, Adjustment: ₹${(receipt.adjustmentAmount || 0).toLocaleString()}). Mode: ${receipt.paymentMode}.`
     });
 
-    localStorage.setItem(STORAGE_INVOICES, JSON.stringify(invoices));
+    allInvoices[invoiceIndex] = invoice;
+    this.saveAllInvoicesRaw(allInvoices);
 
     try {
       AutoPostingEngine.postTransaction({
@@ -626,7 +799,7 @@ export class BillingApiService {
         sourceDocumentNumber: newReceipt.receiptNumber,
         documentDate: newReceipt.paymentDate,
         narration: `Receipt ${newReceipt.receiptNumber} from ${newReceipt.customerName} against ${newReceipt.invoiceNumber}`,
-        baseAmount: settlementValue // The engine converts to paise
+        baseAmount: settlementValue
       });
     } catch (e: unknown) {
       console.warn('Auto posting failed:', e);
@@ -637,55 +810,51 @@ export class BillingApiService {
 
   // --- CREDIT NOTES API ---
   public static async getCreditNotes(): Promise<CreditNote[]> {
-    this.initStorage();
-    const data = localStorage.getItem(STORAGE_CREDIT_NOTES);
-    return data ? JSON.parse(data) : [];
+    const companyId = AuthService.requireCurrentCompanyId();
+    const all = this.getAllCreditNotesRaw();
+    return all.filter(cn => cn.companyId === companyId);
   }
 
   public static async saveCreditNote(cn: Omit<CreditNote, 'id' | 'creditNoteNumber' | 'createdAt' | 'createdBy' | 'createdByUserId' | 'createdByRole'>): Promise<CreditNote> {
-    this.initStorage();
+    const companyId = AuthService.requireCurrentCompanyId();
     const user = AuthService.getCurrentUser();
     if (!user) throw new Error('Authentication required.');
 
     if (GstUtils.isPeriodLocked(cn.creditNoteDate)) {
       throw new Error(`Cannot issue credit note for date ${cn.creditNoteDate} as the GST period is Locked/Filed.`);
     }
-    const creditNotes = await this.getCreditNotes();
-    const invoices = await this.getInvoices();
-    const invoiceIndex = invoices.findIndex(i => i.id === cn.invoiceId);
-    if (invoiceIndex === -1) throw new Error('Linked invoice not found');
 
-    const invoice = invoices[invoiceIndex];
+    const allCreditNotes = this.getAllCreditNotesRaw();
+    const tenantCreditNotes = allCreditNotes.filter(item => item.companyId === companyId);
 
-    // Calculate remaining balance for Credit Note issuance
-    // Rule: Original Invoice Grand Total minus all previous active (non-cancelled) Credit Notes
-    const activeCreditNotes = creditNotes.filter(item => item.invoiceId === cn.invoiceId && item.status !== 'Cancelled');
-    
-    // Remaining grand total
+    const allInvoices = this.getAllInvoicesRaw();
+    const invoiceIndex = allInvoices.findIndex(i => i.id === cn.invoiceId && i.companyId === companyId);
+    if (invoiceIndex === -1) throw new Error('Linked invoice not found or access denied');
+
+    const invoice = allInvoices[invoiceIndex];
+
+    const activeCreditNotes = tenantCreditNotes.filter(item => item.invoiceId === cn.invoiceId && item.status !== 'Cancelled');
+
     const invoiceGrandTotalPaise = toPaise(invoice.grandTotal);
     const activeCnGrandTotalPaise = activeCreditNotes.reduce((sum, item) => sum + toPaise(item.grandTotal), 0);
     const remainingBalancePaise = Math.max(0, invoiceGrandTotalPaise - activeCnGrandTotalPaise);
     const remainingBalance = fromPaise(remainingBalancePaise);
 
-    // Remaining taxable amount
     const invoiceTaxablePaise = toPaise(invoice.taxableAmount);
     const activeCnTaxablePaise = activeCreditNotes.reduce((sum, item) => sum + toPaise(item.taxableAmount), 0);
     const remainingTaxablePaise = Math.max(0, invoiceTaxablePaise - activeCnTaxablePaise);
     const remainingTaxable = fromPaise(remainingTaxablePaise);
 
-    // Remaining CGST
     const invoiceCgstPaise = toPaise(invoice.cgst);
     const activeCnCgstPaise = activeCreditNotes.reduce((sum, item) => sum + toPaise(item.cgst), 0);
     const remainingCgstPaise = Math.max(0, invoiceCgstPaise - activeCnCgstPaise);
     const remainingCgst = fromPaise(remainingCgstPaise);
 
-    // Remaining SGST
     const invoiceSgstPaise = toPaise(invoice.sgst);
     const activeCnSgstPaise = activeCreditNotes.reduce((sum, item) => sum + toPaise(item.sgst), 0);
     const remainingSgstPaise = Math.max(0, invoiceSgstPaise - activeCnSgstPaise);
     const remainingSgst = fromPaise(remainingSgstPaise);
 
-    // Remaining IGST
     const invoiceIgstPaise = toPaise(invoice.igst);
     const activeCnIgstPaise = activeCreditNotes.reduce((sum, item) => sum + toPaise(item.igst), 0);
     const remainingIgstPaise = Math.max(0, invoiceIgstPaise - activeCnIgstPaise);
@@ -708,19 +877,21 @@ export class BillingApiService {
       throw new Error(`Credit Note IGST (₹${cn.igst.toFixed(2)}) exceeds remaining eligible IGST balance (₹${remainingIgst.toFixed(2)}).`);
     }
 
-    // Generate credit note number CN-2026-000001
     const currentYear = new Date().getFullYear();
-    const sameYear = creditNotes.filter(o => o.creditNoteNumber.startsWith(`CN-${currentYear}-`));
+    const sameYear = tenantCreditNotes.filter(o => o.creditNoteNumber.startsWith(`CN-${currentYear}-`));
     let nextSeq = sameYear.length + 1;
     let creditNoteNumber = `CN-${currentYear}-${String(nextSeq).padStart(6, '0')}`;
-    while (creditNotes.some(c => c.creditNoteNumber === creditNoteNumber)) {
+    while (tenantCreditNotes.some(c => c.creditNoteNumber === creditNoteNumber)) {
       nextSeq++;
       creditNoteNumber = `CN-${currentYear}-${String(nextSeq).padStart(6, '0')}`;
     }
 
+    const settings = CompanySettingsService.getCompanyBrandingForDocument({ companyId });
     const timestamp = new Date().toISOString();
     const newCn: CreditNote = {
       id: `cn-${Date.now()}`,
+      companyId,
+      companySnapshot: JSON.stringify(settings),
       creditNoteNumber,
       creditNoteDate: cn.creditNoteDate,
       invoiceId: cn.invoiceId,
@@ -742,12 +913,10 @@ export class BillingApiService {
       createdByRole: user.role
     };
 
-    creditNotes.push(newCn);
-    localStorage.setItem(STORAGE_CREDIT_NOTES, JSON.stringify(creditNotes));
+    allCreditNotes.push(newCn);
+    this.saveAllCreditNotesRaw(allCreditNotes);
 
-    // Update invoice status and audit history
     invoice.status = 'Credit Note Issued';
-    // Deduct credit note total from the payable
     invoice.netPayable = fromPaise(Math.max(0, toPaise(invoice.netPayable) - toPaise(cn.grandTotal)));
     invoice.balanceDue = fromPaise(Math.max(0, toPaise(invoice.netPayable) - toPaise(invoice.amountReceived)));
     invoice.updatedAt = timestamp;
@@ -761,7 +930,8 @@ export class BillingApiService {
       remarks: `Issued Credit Note ${creditNoteNumber} for ₹${cn.grandTotal.toLocaleString()}. Reason: ${cn.reason}`
     });
 
-    localStorage.setItem(STORAGE_INVOICES, JSON.stringify(invoices));
+    allInvoices[invoiceIndex] = invoice;
+    this.saveAllInvoicesRaw(allInvoices);
 
     try {
       AutoPostingEngine.postTransaction({
@@ -785,35 +955,35 @@ export class BillingApiService {
   }
 
   public static async updateCreditNote(id: string, updatedCn: Partial<CreditNote>): Promise<CreditNote> {
-    this.initStorage();
+    const companyId = AuthService.requireCurrentCompanyId();
     const user = AuthService.getCurrentUser();
     if (!user) throw new Error('Authentication required.');
 
-    const creditNotes = await this.getCreditNotes();
-    const index = creditNotes.findIndex(c => c.id === id);
-    if (index === -1) throw new Error('Credit Note not found');
+    const allCreditNotes = this.getAllCreditNotesRaw();
+    const index = allCreditNotes.findIndex(c => c.id === id && c.companyId === companyId);
+    if (index === -1) throw new Error('Credit Note not found or access denied');
 
-    const oldCn = creditNotes[index];
+    const oldCn = allCreditNotes[index];
     if (GstUtils.isPeriodLocked(oldCn.creditNoteDate)) {
       throw new Error(`Cannot update credit note as the GST period is Locked/Filed.`);
     }
 
-    const invoices = await this.getInvoices();
-    const invoiceIndex = invoices.findIndex(i => i.id === oldCn.invoiceId);
-    if (invoiceIndex === -1) throw new Error('Linked invoice not found');
-    const invoice = invoices[invoiceIndex];
+    const allInvoices = this.getAllInvoicesRaw();
+    const invoiceIndex = allInvoices.findIndex(i => i.id === oldCn.invoiceId && i.companyId === companyId);
+    if (invoiceIndex === -1) throw new Error('Linked invoice not found or access denied');
+    const invoice = allInvoices[invoiceIndex];
 
     const updated: CreditNote = {
       ...oldCn,
       ...updatedCn,
+      companyId,
       updatedAt: new Date().toISOString(),
       updatedBy: user.userName,
       updatedByUserId: user.userId,
       updatedByRole: user.role
     };
 
-    // Recalculate remaining balance without this credit note
-    const activeCreditNotes = creditNotes.filter(item => item.invoiceId === oldCn.invoiceId && item.id !== id && item.status !== 'Cancelled');
+    const activeCreditNotes = allCreditNotes.filter(item => item.companyId === companyId && item.invoiceId === oldCn.invoiceId && item.id !== id && item.status !== 'Cancelled');
     const utilizedBalancePaise = activeCreditNotes.reduce((sum, item) => sum + toPaise(item.grandTotal), 0);
     const remainingBalancePaise = Math.max(0, toPaise(invoice.grandTotal) - utilizedBalancePaise);
     const remainingBalance = fromPaise(remainingBalancePaise);
@@ -822,11 +992,10 @@ export class BillingApiService {
       throw new Error(`Updated Credit Note value (₹${updated.grandTotal.toFixed(2)}) exceeds remaining eligible balance (₹${remainingBalance.toFixed(2)}).`);
     }
 
-    creditNotes[index] = updated;
-    localStorage.setItem(STORAGE_CREDIT_NOTES, JSON.stringify(creditNotes));
+    allCreditNotes[index] = updated;
+    this.saveAllCreditNotesRaw(allCreditNotes);
 
-    // Update invoice netPayable
-    const newActiveCreditNotes = creditNotes.filter(item => item.invoiceId === oldCn.invoiceId && item.status !== 'Cancelled');
+    const newActiveCreditNotes = allCreditNotes.filter(item => item.companyId === companyId && item.invoiceId === oldCn.invoiceId && item.status !== 'Cancelled');
     const newUtilizedPaise = newActiveCreditNotes.reduce((sum, item) => sum + toPaise(item.grandTotal), 0);
     invoice.netPayable = fromPaise(Math.max(0, toPaise(invoice.grandTotal) - newUtilizedPaise));
     invoice.balanceDue = fromPaise(Math.max(0, toPaise(invoice.netPayable) - toPaise(invoice.amountReceived)));
@@ -841,35 +1010,35 @@ export class BillingApiService {
       remarks: `Updated Credit Note ${oldCn.creditNoteNumber}. New total: ₹${updated.grandTotal.toLocaleString()}`
     });
 
-    localStorage.setItem(STORAGE_INVOICES, JSON.stringify(invoices));
+    allInvoices[invoiceIndex] = invoice;
+    this.saveAllInvoicesRaw(allInvoices);
     return updated;
   }
 
   public static async cancelCreditNote(id: string): Promise<CreditNote> {
-    this.initStorage();
+    const companyId = AuthService.requireCurrentCompanyId();
     const user = AuthService.getCurrentUser();
     if (!user) throw new Error('Authentication required.');
 
-    const creditNotes = await this.getCreditNotes();
-    const index = creditNotes.findIndex(c => c.id === id);
-    if (index === -1) throw new Error('Credit Note not found');
+    const allCreditNotes = this.getAllCreditNotesRaw();
+    const index = allCreditNotes.findIndex(c => c.id === id && c.companyId === companyId);
+    if (index === -1) throw new Error('Credit Note not found or access denied');
 
-    const cn = creditNotes[index];
+    const cn = allCreditNotes[index];
     if (GstUtils.isPeriodLocked(cn.creditNoteDate)) {
       throw new Error(`Cannot cancel credit note as the GST period is Locked/Filed.`);
     }
 
-    const invoices = await this.getInvoices();
-    const invoiceIndex = invoices.findIndex(i => i.id === cn.invoiceId);
-    if (invoiceIndex === -1) throw new Error('Linked invoice not found');
-    const invoice = invoices[invoiceIndex];
+    const allInvoices = this.getAllInvoicesRaw();
+    const invoiceIndex = allInvoices.findIndex(i => i.id === cn.invoiceId && i.companyId === companyId);
+    if (invoiceIndex === -1) throw new Error('Linked invoice not found or access denied');
+    const invoice = allInvoices[invoiceIndex];
 
     cn.status = 'Cancelled';
-    creditNotes[index] = cn;
-    localStorage.setItem(STORAGE_CREDIT_NOTES, JSON.stringify(creditNotes));
+    allCreditNotes[index] = cn;
+    this.saveAllCreditNotesRaw(allCreditNotes);
 
-    // Restore invoice netPayable and balanceDue
-    const activeCreditNotes = creditNotes.filter(item => item.invoiceId === cn.invoiceId && item.status !== 'Cancelled');
+    const activeCreditNotes = allCreditNotes.filter(item => item.companyId === companyId && item.invoiceId === cn.invoiceId && item.status !== 'Cancelled');
     const utilizedBalancePaise = activeCreditNotes.reduce((sum, item) => sum + toPaise(item.grandTotal), 0);
     invoice.netPayable = fromPaise(Math.max(0, toPaise(invoice.grandTotal) - utilizedBalancePaise));
     invoice.balanceDue = fromPaise(Math.max(0, toPaise(invoice.netPayable) - toPaise(invoice.amountReceived)));
@@ -884,7 +1053,8 @@ export class BillingApiService {
       remarks: `Cancelled Credit Note ${cn.creditNoteNumber}. Restored ₹${cn.grandTotal.toLocaleString()} to invoice.`
     });
 
-    localStorage.setItem(STORAGE_INVOICES, JSON.stringify(invoices));
+    allInvoices[invoiceIndex] = invoice;
+    this.saveAllInvoicesRaw(allInvoices);
 
     try {
       AutoPostingEngine.reverseTransaction('Billing', cn.id, 'Credit Note Cancelled');
@@ -896,29 +1066,28 @@ export class BillingApiService {
   }
 
   public static async deleteCreditNote(id: string): Promise<void> {
-    this.initStorage();
+    const companyId = AuthService.requireCurrentCompanyId();
     const user = AuthService.getCurrentUser();
     if (!user) throw new Error('Authentication required.');
 
-    const creditNotes = await this.getCreditNotes();
-    const index = creditNotes.findIndex(c => c.id === id);
-    if (index === -1) throw new Error('Credit Note not found');
+    const allCreditNotes = this.getAllCreditNotesRaw();
+    const index = allCreditNotes.findIndex(c => c.id === id && c.companyId === companyId);
+    if (index === -1) throw new Error('Credit Note not found or access denied');
 
-    const cn = creditNotes[index];
+    const cn = allCreditNotes[index];
     if (GstUtils.isPeriodLocked(cn.creditNoteDate)) {
       throw new Error(`Cannot delete credit note as the GST period is Locked/Filed.`);
     }
 
-    const invoices = await this.getInvoices();
-    const invoiceIndex = invoices.findIndex(i => i.id === cn.invoiceId);
-    if (invoiceIndex === -1) throw new Error('Linked invoice not found');
-    const invoice = invoices[invoiceIndex];
+    const allInvoices = this.getAllInvoicesRaw();
+    const invoiceIndex = allInvoices.findIndex(i => i.id === cn.invoiceId && i.companyId === companyId);
+    if (invoiceIndex === -1) throw new Error('Linked invoice not found or access denied');
+    const invoice = allInvoices[invoiceIndex];
 
-    creditNotes.splice(index, 1);
-    localStorage.setItem(STORAGE_CREDIT_NOTES, JSON.stringify(creditNotes));
+    allCreditNotes.splice(index, 1);
+    this.saveAllCreditNotesRaw(allCreditNotes);
 
-    // Recalculate invoice netPayable and balanceDue
-    const activeCreditNotes = creditNotes.filter(item => item.invoiceId === cn.invoiceId && item.status !== 'Cancelled');
+    const activeCreditNotes = allCreditNotes.filter(item => item.companyId === companyId && item.invoiceId === cn.invoiceId && item.status !== 'Cancelled');
     const utilizedBalancePaise = activeCreditNotes.reduce((sum, item) => sum + toPaise(item.grandTotal), 0);
     invoice.netPayable = fromPaise(Math.max(0, toPaise(invoice.grandTotal) - utilizedBalancePaise));
     invoice.balanceDue = fromPaise(Math.max(0, toPaise(invoice.netPayable) - toPaise(invoice.amountReceived)));
@@ -933,7 +1102,8 @@ export class BillingApiService {
       remarks: `Deleted Credit Note ${cn.creditNoteNumber}. Restored ₹${cn.grandTotal.toLocaleString()} to invoice.`
     });
 
-    localStorage.setItem(STORAGE_INVOICES, JSON.stringify(invoices));
+    allInvoices[invoiceIndex] = invoice;
+    this.saveAllInvoicesRaw(allInvoices);
   }
 
   // --- CUSTOMER OUTSTANDING & AGEING API ---
@@ -945,14 +1115,9 @@ export class BillingApiService {
 
     return finalizedAndActive.map(inv => {
       const invoiceDate = new Date(inv.invoiceDate);
-      const dueDate = new Date(inv.dueDate);
       
       let ageingDays = 0;
       if (inv.balanceDue > 0) {
-        // If unpaid, ageing is calculated from the Due Date or Invoice Date depending on company practice.
-        // Usually, ageing starts from Invoice Date or Due Date. Let's do it from Due Date for Overdue, 
-        // or from invoiceDate to show the total elapsed days since billing (standard ERP practice).
-        // Standard aging is computed based on Invoice Date. Let's use Invoice Date to represent the chronological age.
         const diffTime = Math.abs(today.getTime() - invoiceDate.getTime());
         ageingDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
         if (today < invoiceDate) ageingDays = 0;
@@ -993,7 +1158,6 @@ export class BillingApiService {
       summary.totalOutstanding += out.balanceDue;
 
       const due = new Date(out.dueDate);
-      const invoice = new Date(out.invoiceDate);
 
       if (today <= due) {
         summary.current += out.balanceDue;
@@ -1017,11 +1181,9 @@ export class BillingApiService {
   }
 
   // --- DATA IMPORTERS ---
-  // Load approved Proforma Invoices
   public static async getApprovedPIs(): Promise<any[]> {
     try {
       const pis = await PIApiService.getInvoices();
-      // Filter by accepted/approved statuses
       return pis.filter(p => p.status === 'Accepted' || p.status === 'Production Approved' || p.status === 'Converted to Production' || p.status === 'Paid' || p.status === 'Partially Paid');
     } catch (e) {
       console.error('Error fetching PIs:', e);
@@ -1029,11 +1191,9 @@ export class BillingApiService {
     }
   }
 
-  // Load delivered / partially delivered Delivery Challans
   public static async getEligibleChallans(): Promise<any[]> {
     try {
       const challans = await DeliveryChallanApiService.getChallans();
-      // Delivered or Partially Delivered
       return challans.filter(c => c.status === 'Delivered' || c.status === 'Partially Delivered');
     } catch (e) {
       console.error('Error fetching delivery challans:', e);
@@ -1041,7 +1201,6 @@ export class BillingApiService {
     }
   }
 
-  // Load Customer Masters
   public static getCustomers() {
     return CustomerMasterService.getCustomers();
   }

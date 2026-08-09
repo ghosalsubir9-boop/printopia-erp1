@@ -31,6 +31,7 @@ import {
 import { format } from 'date-fns';
 import { QuotationHeader, QuotationStatus, QuotationItemOption } from '../types';
 import { QuotationApiService } from '../services/api';
+import DocumentPdfPreviewModal from '../../../components/DocumentPdfPreviewModal';
 
 interface QuotationDetailsProps {
   quotation: QuotationHeader;
@@ -41,6 +42,7 @@ interface QuotationDetailsProps {
 
 export default function QuotationDetails({ quotation: initialQuotation, onBack, onEdit, onConvertToPI }: QuotationDetailsProps) {
   const [quotation, setQuotation] = useState<QuotationHeader>(initialQuotation);
+  const [pdfModalOpen, setPdfModalOpen] = useState(false);
 
   const hasAcceptedItems = quotation.items.some(item => 
     item.options.some(opt => opt.status === 'Accepted')
@@ -83,18 +85,8 @@ export default function QuotationDetails({ quotation: initialQuotation, onBack, 
         <Button variant="outlined" startIcon={<HistoryIcon />} sx={{ borderRadius: 2 }}>
           Revision History
         </Button>
-        <Button variant="outlined" startIcon={<PdfIcon />} onClick={async () => {
-          try {
-            const { DocumentPdfService } = await import('../../../utils/DocumentPdfService');
-            const { CompanySettingsService } = await import('../../../services/CompanySettingsService');
-            const companyDetails = CompanySettingsService.getCompanyBrandingForDocument(quotation);
-            await DocumentPdfService.generateQuotationPdf(quotation, companyDetails);
-          } catch(e) {
-            console.error("PDF generation failed", e);
-            alert("Failed to generate PDF. Check console for details.");
-          }
-        }} sx={{ borderRadius: 2 }}>
-          Download PDF
+        <Button variant="outlined" startIcon={<PdfIcon />} onClick={() => setPdfModalOpen(true)} sx={{ borderRadius: 2 }}>
+          Preview / Print PDF
         </Button>
         <Button 
           variant="contained" 
@@ -110,6 +102,13 @@ export default function QuotationDetails({ quotation: initialQuotation, onBack, 
           Edit Quotation
         </Button>
       </Box>
+
+      <DocumentPdfPreviewModal
+        open={pdfModalOpen}
+        onClose={() => setPdfModalOpen(false)}
+        documentType="quotation"
+        documentData={quotation}
+      />
 
       <Grid container spacing={3}>
         <Grid size={{ xs: 12, md: 8 }}>

@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useRef } from 'react';
+import React, { useRef, useState } from 'react';
 import {
   Dialog,
   DialogContent,
@@ -23,6 +23,7 @@ import {
 } from '@mui/material';
 import { Printer as PrintIcon, X as CloseIcon, FileText as FileIcon } from 'lucide-react';
 import { PurchaseOrderHeader } from '../types';
+import DocumentPdfPreviewModal from '../../../components/DocumentPdfPreviewModal';
 
 interface PurchaseOrderPrintProps {
   open: boolean;
@@ -32,6 +33,7 @@ interface PurchaseOrderPrintProps {
 
 export default function PurchaseOrderPrint({ open, onClose, po }: PurchaseOrderPrintProps) {
   const printAreaRef = useRef<HTMLDivElement>(null);
+  const [pdfModalOpen, setPdfModalOpen] = useState(false);
 
   if (!po) return null;
 
@@ -73,14 +75,24 @@ export default function PurchaseOrderPrint({ open, onClose, po }: PurchaseOrderP
           </Typography>
         </Box>
         <Box sx={{ display: 'flex', gap: 1.5 }}>
-          <Button variant="contained" startIcon={<PrintIcon size={16} />} onClick={handlePrint} size="small">
-            Print PO
+          <Button variant="contained" color="primary" startIcon={<FileIcon size={16} />} onClick={() => setPdfModalOpen(true)} size="small">
+            PDF Preview / Download
+          </Button>
+          <Button variant="outlined" startIcon={<PrintIcon size={16} />} onClick={handlePrint} size="small">
+            Web Print
           </Button>
           <Button variant="outlined" color="inherit" startIcon={<CloseIcon size={16} />} onClick={onClose} size="small">
             Close
           </Button>
         </Box>
       </DialogActions>
+
+      <DocumentPdfPreviewModal
+        open={pdfModalOpen}
+        onClose={() => setPdfModalOpen(false)}
+        documentType="purchase_order"
+        documentData={po}
+      />
 
       <DialogContent sx={{ p: 4, bgcolor: 'background.default' }}>
         {/* Printable Section */}

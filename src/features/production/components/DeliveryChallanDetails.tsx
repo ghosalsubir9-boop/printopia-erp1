@@ -36,6 +36,7 @@ import {
 import { DeliveryChallan, DeliveryTrackingStatus, ProofOfDelivery } from '../types';
 import { DeliveryChallanApiService } from '../services/deliveryChallanApi';
 import { CompanySettingsService } from '../../../services/CompanySettingsService';
+import DocumentPdfPreviewModal from '../../../components/DocumentPdfPreviewModal';
 
 interface DeliveryChallanDetailsProps {
   challan: DeliveryChallan;
@@ -46,6 +47,7 @@ interface DeliveryChallanDetailsProps {
 export default function DeliveryChallanDetails({ challan: initialChallan, onBack, onSave }: DeliveryChallanDetailsProps) {
   const [challan, setChallan] = useState<DeliveryChallan>(initialChallan);
   const [isPrinting, setIsPrinting] = useState(false);
+  const [pdfModalOpen, setPdfModalOpen] = useState(false);
 
   // Tracking Dialog
   const [trackingOpen, setTrackingOpen] = useState(false);
@@ -308,9 +310,16 @@ export default function DeliveryChallanDetails({ challan: initialChallan, onBack
             variant="outlined"
             color="primary"
             startIcon={<PrintIcon size={16} />}
-            onClick={handlePrint}
+            onClick={() => setPdfModalOpen(true)}
           >
-            Print Challan
+            Preview / Print / PDF
+          </Button>
+          <Button
+            variant="outlined"
+            onClick={handlePrint}
+            color="inherit"
+          >
+            Web Print
           </Button>
           {challan.status !== 'Delivered' && challan.status !== 'Cancelled' && (
             <>
@@ -334,6 +343,13 @@ export default function DeliveryChallanDetails({ challan: initialChallan, onBack
           )}
         </Box>
       </Box>
+
+      <DocumentPdfPreviewModal
+        open={pdfModalOpen}
+        onClose={() => setPdfModalOpen(false)}
+        documentType="delivery_challan"
+        documentData={challan}
+      />
 
       <Grid container spacing={3}>
         {/* Core Challan Card */}

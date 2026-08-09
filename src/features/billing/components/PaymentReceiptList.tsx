@@ -34,10 +34,12 @@ import {
   CreditCard, 
   DollarSign,
   Layers,
-  ArrowRight
+  ArrowRight,
+  Printer
 } from 'lucide-react';
 import { PaymentReceipt } from '../types';
 import { BillingApiService } from '../api';
+import DocumentPdfPreviewModal from '../../../components/DocumentPdfPreviewModal';
 
 interface PaymentReceiptListProps {
   onCreateClick: () => void;
@@ -48,6 +50,8 @@ export default function PaymentReceiptList({ onCreateClick }: PaymentReceiptList
   const [search, setSearch] = useState('');
   const [modeFilter, setModeFilter] = useState<string>('ALL');
   const [customerFilter, setCustomerFilter] = useState<string>('ALL');
+  const [selectedReceipt, setSelectedReceipt] = useState<PaymentReceipt | null>(null);
+  const [pdfModalOpen, setPdfModalOpen] = useState(false);
 
   useEffect(() => {
     loadReceipts();
@@ -249,12 +253,13 @@ export default function PaymentReceiptList({ onCreateClick }: PaymentReceiptList
                   <TableCell sx={{ fontWeight: 'bold' }}>Mode & Reference</TableCell>
                   <TableCell sx={{ fontWeight: 'bold' }} align="right">TDS / Adjustments</TableCell>
                   <TableCell sx={{ fontWeight: 'bold' }} align="right">Receipt Amount</TableCell>
+                  <TableCell sx={{ fontWeight: 'bold' }} align="center">Actions</TableCell>
                 </TableRow>
               </TableHead>
               <TableBody>
                 {filteredReceipts.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={7} align="center" sx={{ py: 6 }}>
+                    <TableCell colSpan={8} align="center" sx={{ py: 6 }}>
                       <CreditCard size={40} className="mx-auto text-gray-300 mb-2" />
                       <Typography variant="subtitle1" color="text.secondary" sx={{ fontWeight: 'bold' }}>
                         No payment receipts recorded yet
@@ -310,6 +315,20 @@ export default function PaymentReceiptList({ onCreateClick }: PaymentReceiptList
                           ₹{rec.amount.toLocaleString()}
                         </Typography>
                       </TableCell>
+                      <TableCell align="center">
+                        <Tooltip title="Preview / Print PDF">
+                          <IconButton
+                            size="small"
+                            color="primary"
+                            onClick={() => {
+                              setSelectedReceipt(rec);
+                              setPdfModalOpen(true);
+                            }}
+                          >
+                            <Printer size={16} />
+                          </IconButton>
+                        </Tooltip>
+                      </TableCell>
                     </TableRow>
                   ))
                 )}
@@ -318,6 +337,15 @@ export default function PaymentReceiptList({ onCreateClick }: PaymentReceiptList
           </TableContainer>
         </CardContent>
       </Card>
+
+      {selectedReceipt && (
+        <DocumentPdfPreviewModal
+          open={pdfModalOpen}
+          onClose={() => setPdfModalOpen(false)}
+          documentType="payment_receipt"
+          documentData={selectedReceipt}
+        />
+      )}
     </Box>
   );
 }

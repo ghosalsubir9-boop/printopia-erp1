@@ -40,6 +40,7 @@ import {
 } from 'lucide-react';
 import { GoodsReceiptNote } from '../types';
 import { PurchaseApiService } from '../services/api';
+import DocumentPdfPreviewModal from '../../../components/DocumentPdfPreviewModal';
 
 interface GRNListProps {
   onEditGRN: (grn: GoodsReceiptNote) => void;
@@ -57,6 +58,7 @@ export default function GRNList({ onEditGRN }: GRNListProps) {
   // Print modal
   const [printGRN, setPrintGRN] = useState<GoodsReceiptNote | null>(null);
   const [openPrintModal, setOpenPrintModal] = useState(false);
+  const [pdfModalOpen, setPdfModalOpen] = useState(false);
 
   useEffect(() => {
     loadGRNs();
@@ -404,9 +406,14 @@ export default function GRNList({ onEditGRN }: GRNListProps) {
       <Dialog open={openPrintModal} onClose={() => setOpenPrintModal(false)} maxWidth="md" fullWidth>
         <DialogTitle sx={{ borderBottom: '1px solid', borderColor: 'divider', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <Typography variant="h6" sx={{ fontWeight: 'bold' }}>Print Goods Receipt Note (GRN)</Typography>
-          <Button variant="contained" color="secondary" startIcon={<PrintIcon size={16} />} onClick={handlePrintAction} size="small">
-            Execute Print / PDF
-          </Button>
+          <Box sx={{ display: 'flex', gap: 1 }}>
+            <Button variant="contained" color="primary" startIcon={<PrintIcon size={16} />} onClick={() => setPdfModalOpen(true)} size="small">
+              PDF Preview / Download
+            </Button>
+            <Button variant="outlined" color="secondary" startIcon={<PrintIcon size={16} />} onClick={handlePrintAction} size="small">
+              Web Print
+            </Button>
+          </Box>
         </DialogTitle>
         <DialogContent sx={{ p: 0 }}>
           {/* Print Template Body */}
@@ -555,6 +562,15 @@ export default function GRNList({ onEditGRN }: GRNListProps) {
           </Button>
         </DialogActions>
       </Dialog>
+
+      {printGRN && (
+        <DocumentPdfPreviewModal
+          open={pdfModalOpen}
+          onClose={() => setPdfModalOpen(false)}
+          documentType="grn"
+          documentData={printGRN}
+        />
+      )}
     </Box>
   );
 }

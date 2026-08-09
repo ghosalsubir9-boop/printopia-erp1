@@ -134,6 +134,10 @@ export class AuthService {
   }
 
   public static requireCurrentCompanyId(): string {
+    const user = this.getCurrentUser();
+    if (!user) {
+      throw new Error('Authentication required.');
+    }
     const companyId = this.getCurrentCompanyId();
     if (!companyId) {
       throw new Error('Tenant organization context is required for this action.');

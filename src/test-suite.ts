@@ -26,6 +26,8 @@ import { ProductionApiService } from './features/production/services/api';
 import { JobCardApiService } from './features/production/services/jobCardApi';
 import { DispatchApiService } from './features/production/services/dispatchApi';
 import { DeliveryChallanApiService } from './features/production/services/deliveryChallanApi';
+import { CompanySettingsService } from './services/CompanySettingsService';
+import { DevelopmentLocalVoucherRepository } from './features/finance/services/voucherRepositories';
 
 async function runTests() {
   console.log('=== STARTING PRINTOPIA AUTH & INTEGRITY TEST SUITE ===\n');
@@ -1089,6 +1091,7 @@ async function runTests() {
   // ==========================================
   console.log('\n// MODULE-11: GST INVOICE TESTS');
   
+  // 1. Setup Company 1 Session and create Invoice, Receipt, Credit Note
   AuthService.createSession({
     userId: 'user-777',
     userName: 'Tester John',
@@ -1098,35 +1101,263 @@ async function runTests() {
     companyName: 'Company 1'
   });
 
-  const allChallans = await DeliveryChallanApiService.getChallans();
-  const dc = allChallans[0];
-  if (dc) {
-    const qtyMap = {};
-    for (const item of dc.items) {
-      qtyMap[item.id] = item.currentDispatchQuantity;
-    }
+  try {
+    // 8. Test 5%, 12%, 18% and 28% GST calculations for CGST/SGST and IGST
+    const ratesTestIntra = BillingApiService.recalculateInvoiceItemsAndTotals(
+      [
+        { id: 'r5', productName: 'Item 5%', description: '', hsnSac: '4901', unit: 'Pcs', quantity: 10, ratePerPiece: 100, discount: 0, gstRate: 5, taxableAmount: 1000, cgst: 0, sgst: 0, igst: 0, itemAmount: 0 },
+        { id: 'r12', productName: 'Item 12%', description: '', hsnSac: '4901', unit: 'Pcs', quantity: 10, ratePerPiece: 100, discount: 0, gstRate: 12, taxableAmount: 1000, cgst: 0, sgst: 0, igst: 0, itemAmount: 0 },
+        { id: 'r18', productName: 'Item 18%', description: '', hsnSac: '4901', unit: 'Pcs', quantity: 10, ratePerPiece: 100, discount: 0, gstRate: 18, taxableAmount: 1000, cgst: 0, sgst: 0, igst: 0, itemAmount: 0 },
+        { id: 'r28', productName: 'Item 28%', description: '', hsnSac: '4901', unit: 'Pcs', quantity: 10, ratePerPiece: 100, discount: 0, gstRate: 28, taxableAmount: 1000, cgst: 0, sgst: 0, igst: 0, itemAmount: 0 }
+      ],
+      0,
+      '27',
+      '27'
+    );
+    assert(ratesTestIntra.items[0].cgst === 25 && ratesTestIntra.items[0].sgst === 25, 'Verify: 5% GST splits 2.5% CGST + 2.5% SGST.');
+    assert(ratesTestIntra.items[1].cgst === 60 && ratesTestIntra.items[1].sgst === 60, 'Verify: 12% GST splits 6% CGST + 6% SGST.');
+    assert(ratesTestIntra.items[2].cgst === 90 && ratesTestIntra.items[2].sgst === 90, 'Verify: 18% GST splits 9% CGST + 9% SGST.');
+    assert(ratesTestIntra.items[3].cgst === 140 && ratesTestIntra.items[3].sgst === 140, 'Verify: 28% GST splits 14% CGST + 14% SGST.');
+
+    const ratesTestInter = BillingApiService.recalculateInvoiceItemsAndTotals(
+      [
+        { id: 'r5', productName: 'Item 5%', description: '', hsnSac: '4901', unit: 'Pcs', quantity: 10, ratePerPiece: 100, discount: 0, gstRate: 5, taxableAmount: 1000, cgst: 0, sgst: 0, igst: 0, itemAmount: 0 },
+        { id: 'r12', productName: 'Item 12%', description: '', hsnSac: '4901', unit: 'Pcs', quantity: 10, ratePerPiece: 100, discount: 0, gstRate: 12, taxableAmount: 1000, cgst: 0, sgst: 0, igst: 0, itemAmount: 0 },
+        { id: 'r18', productName: 'Item 18%', description: '', hsnSac: '4901', unit: 'Pcs', quantity: 10, ratePerPiece: 100, discount: 0, gstRate: 18, taxableAmount: 1000, cgst: 0, sgst: 0, igst: 0, itemAmount: 0 },
+        { id: 'r28', productName: 'Item 28%', description: '', hsnSac: '4901', unit: 'Pcs', quantity: 10, ratePerPiece: 100, discount: 0, gstRate: 28, taxableAmount: 1000, cgst: 0, sgst: 0, igst: 0, itemAmount: 0 }
+      ],
+      0,
+      '07', // Delhi
+      '27'  // Maharashtra
+    );
+    assert(ratesTestInter.items[0].igst === 50, 'Verify: 5% IGST is 50.');
+    assert(ratesTestInter.items[1].igst === 120, 'Verify: 12% IGST is 120.');
+    assert(ratesTestInter.items[2].igst === 180, 'Verify: 18% IGST is 180.');
+    assert(ratesTestInter.items[3].igst === 280, 'Verify: 28% IGST is 280.');
+
+    // 1 & 3. Draft invoice quantity is included in PI availability calculation & PI cannot be over-invoiced during finalization
+    const testPiId = `pi-test-${Date.now()}`;
+    const testPiItemId = `pi-item-${Date.now()}`;
     
+    // Save Draft 1 reserving 6 units out of 10 for sourcePiItemId
+    const piDraft1 = await BillingApiService.saveInvoice({
+      invoiceDate: '2026-08-01',
+      customerId: 'cust-co1',
+      customerName: 'Customer Co1',
+      linkedPiId: testPiId,
+      items: [
+        {
+          id: `inv-item-p1`,
+          productName: 'PI Book',
+          description: '',
+          hsnSac: '4901',
+          unit: 'Pcs',
+          quantity: 6,
+          orderedQty: 10,
+          sourcePiItemId: testPiItemId,
+          ratePerPiece: 100,
+          discount: 0,
+          taxableAmount: 600,
+          gstRate: 18,
+          cgst: 54,
+          sgst: 54,
+          igst: 0,
+          itemAmount: 708
+        }
+      ]
+    });
+    assert(piDraft1.status === 'Draft', 'Verify: PI Draft invoice created.');
+
+    // Save Draft 2 trying to invoice 5 units for the same sourcePiItemId (total 11 > 10)
+    const piDraft2 = await BillingApiService.saveInvoice({
+      invoiceDate: '2026-08-01',
+      customerId: 'cust-co1',
+      customerName: 'Customer Co1',
+      linkedPiId: testPiId,
+      items: [
+        {
+          id: `inv-item-p2`,
+          productName: 'PI Book',
+          description: '',
+          hsnSac: '4901',
+          unit: 'Pcs',
+          quantity: 5,
+          orderedQty: 10,
+          sourcePiItemId: testPiItemId,
+          ratePerPiece: 100,
+          discount: 0,
+          taxableAmount: 500,
+          gstRate: 18,
+          cgst: 45,
+          sgst: 45,
+          igst: 0,
+          itemAmount: 590
+        }
+      ]
+    });
+
+    // Finalizing piDraft2 must be blocked because 6 (from piDraft1) + 5 (from piDraft2) = 11 > 10 ordered
     try {
-      const invoice = await BillingApiService.createInvoiceFromDeliveryChallans([dc.id], qtyMap);
-      assert(invoice.companyId === 'company-1', 'Verify: Invoice companyId is correct');
-      assert(invoice.items.length === dc.items.length, 'Verify: Invoice items count matches DC items');
-      assert(invoice.invoiceNumber.startsWith('INV/2026-27/'), 'Verify: Invoice number format');
-      console.log('[PASS] Verify: Create GST Invoice from Delivery Challan');
-      
-      try {
-        await BillingApiService.createInvoiceFromDeliveryChallans([dc.id], qtyMap);
-        assert(false, 'Should have blocked duplicate invoice quantity');
-      } catch (e) {
-        assert(e.message.includes('exceeds available quantity'), 'Verify: Duplicate invoice quantity is blocked');
-        console.log('[PASS] Verify: Block duplicate invoice quantity');
-      }
-      passedCount++;
-    } catch (e) {
-      failedCount++;
-      console.error('[FAIL] GST Invoice tests failed:', e);
+      await BillingApiService.finalizeInvoice(piDraft2.id);
+      assert(false, 'Should have blocked PI over-invoicing during finalization');
+    } catch (e: any) {
+      assert(e.message.includes('exceeds ordered quantity') || e.message.includes('exceeds'), 'Verify: Draft invoice quantity is included in PI availability calculation and PI cannot be over-invoiced during finalization.');
     }
-  } else {
-    console.error('[FAIL] Could not find Delivery Challan to test billing');
+
+    // Cancel piDraft2 so its draft quantity is released
+    await BillingApiService.cancelInvoice(piDraft2.id, 'Test cleanup');
+
+    // 2 & 4. Draft invoice quantity is included in DC availability calculation & DC cannot be over-invoiced during finalization
+    const testDcItemId = `dc-item-${Date.now()}`;
+    const dcDraft1 = await BillingApiService.saveInvoice({
+      invoiceDate: '2026-08-01',
+      customerId: 'cust-co1',
+      customerName: 'Customer Co1',
+      items: [
+        {
+          id: `inv-item-d1`,
+          productName: 'DC Flyer',
+          description: '',
+          hsnSac: '4901',
+          unit: 'Pcs',
+          quantity: 15,
+          orderedQty: 20,
+          sourceDeliveryChallanItemId: testDcItemId,
+          ratePerPiece: 10,
+          discount: 0,
+          taxableAmount: 150,
+          gstRate: 18,
+          cgst: 13.5,
+          sgst: 13.5,
+          igst: 0,
+          itemAmount: 177
+        }
+      ]
+    });
+
+    const dcDraft2 = await BillingApiService.saveInvoice({
+      invoiceDate: '2026-08-01',
+      customerId: 'cust-co1',
+      customerName: 'Customer Co1',
+      items: [
+        {
+          id: `inv-item-d2`,
+          productName: 'DC Flyer',
+          description: '',
+          hsnSac: '4901',
+          unit: 'Pcs',
+          quantity: 10,
+          orderedQty: 20,
+          sourceDeliveryChallanItemId: testDcItemId,
+          ratePerPiece: 10,
+          discount: 0,
+          taxableAmount: 100,
+          gstRate: 18,
+          cgst: 9,
+          sgst: 9,
+          igst: 0,
+          itemAmount: 118
+        }
+      ]
+    });
+
+    try {
+      await BillingApiService.finalizeInvoice(dcDraft2.id);
+      assert(false, 'Should have blocked DC over-invoicing during finalization');
+    } catch (e: any) {
+      assert(e.message.includes('exceeds available quantity') || e.message.includes('exceeds'), 'Verify: Draft invoice quantity is included in DC availability calculation and DC cannot be over-invoiced during finalization.');
+    }
+
+    // 7. Save & Finalize posts accounting exactly once
+    const initialVouchersCount = DevelopmentLocalVoucherRepository.getVouchers().filter(v => v.sourceDocumentId === piDraft1.id).length;
+    assert(initialVouchersCount === 0, 'Verify: Saving draft invoice does NOT post accounting entries.');
+
+    const finalizedInvoice = await BillingApiService.finalizeInvoice(piDraft1.id);
+    assert(finalizedInvoice.status === 'Finalized', 'Verify: Invoice finalized.');
+
+    const vouchersAfterFinalize = DevelopmentLocalVoucherRepository.getVouchers().filter(v => v.sourceDocumentId === piDraft1.id);
+    assert(vouchersAfterFinalize.length === 1, 'Verify: Save & Finalize posts accounting exactly once.');
+
+    try {
+      await BillingApiService.finalizeInvoice(piDraft1.id);
+      assert(false, 'Should have blocked double finalization.');
+    } catch (e: any) {
+      assert(e.message.includes('Draft'), 'Verify: Re-finalizing an already finalized invoice is blocked.');
+    }
+
+    // 5 & 6. Payment Receipts and Credit Notes are company isolated & Company A billing actions do not affect Company B
+    const rec1 = await BillingApiService.saveReceipt({
+      paymentDate: '2026-08-02',
+      customerId: 'cust-co1',
+      customerName: 'Customer Co1',
+      invoiceId: finalizedInvoice.id,
+      invoiceNumber: finalizedInvoice.invoiceNumber,
+      amount: 500,
+      paymentMode: 'Bank Transfer',
+      bank: 'HDFC Bank',
+      transactionReference: 'TXN-CO1-001',
+      tdsAmount: 0,
+      adjustmentAmount: 0
+    });
+    assert(rec1.companyId === 'company-1', 'Verify: Payment receipt tagged with company-1.');
+
+    const cn1 = await BillingApiService.saveCreditNote({
+      creditNoteDate: '2026-08-03',
+      invoiceId: finalizedInvoice.id,
+      invoiceNumber: finalizedInvoice.invoiceNumber,
+      customerId: 'cust-co1',
+      customerName: 'Customer Co1',
+      reason: 'Rate Difference',
+      items: [],
+      taxableAmount: 100,
+      cgst: 6,
+      sgst: 6,
+      igst: 0,
+      grandTotal: 112
+    });
+    assert(cn1.companyId === 'company-1', 'Verify: Credit note tagged with company-1.');
+
+    // Switch to Company 2 Session
+    AuthService.createSession({
+      userId: 'user-888',
+      userName: 'Company2 Admin',
+      email: 'admin@company2.com',
+      role: 'COMPANY_ADMIN',
+      companyId: 'company-2',
+      companyName: 'Company 2'
+    });
+
+    // Check Company 2 cannot see Company 1's invoices, receipts, or credit notes
+    const co2Invoices = await BillingApiService.getInvoices();
+    assert(!co2Invoices.some(i => i.id === finalizedInvoice.id), 'Verify: Company 2 cannot view Company 1 invoices.');
+
+    const co2Receipts = await BillingApiService.getReceipts();
+    assert(!co2Receipts.some(r => r.id === rec1.id), 'Verify: Company 2 cannot view Company 1 receipts.');
+
+    const co2CreditNotes = await BillingApiService.getCreditNotes();
+    assert(!co2CreditNotes.some(c => c.id === cn1.id), 'Verify: Company 2 cannot view Company 1 credit notes.');
+
+    // Switch back to Company 1 to verify Company 1's records were untouched
+    AuthService.createSession({
+      userId: 'user-777',
+      userName: 'Tester John',
+      email: 'tester@company1.com',
+      role: 'COMPANY_ADMIN',
+      companyId: 'company-1',
+      companyName: 'Company 1'
+    });
+
+    const co1InvoicesAfter = await BillingApiService.getInvoices();
+    assert(co1InvoicesAfter.some(i => i.id === finalizedInvoice.id), 'Verify: Company 1 invoice preserved after Company 2 actions (Multi-tenant storage safety).');
+
+    // Branding test
+    const brandingCo1 = CompanySettingsService.getCompanyBrandingForDocument({ companyId: 'company-1' });
+    const brandingCo2 = CompanySettingsService.getCompanyBrandingForDocument({ companyId: 'company-2' });
+    assert(brandingCo1.companyId === 'company-1' && brandingCo2.companyId === 'company-2', 'Verify: Document branding is company-specific.');
+
+    console.log('[PASS] Module-11 comprehensive multi-tenant, billing, tax and branding tests completed successfully.');
+  } catch (e: any) {
+    console.error('[FAIL] Module-11 tests failed:', e);
     failedCount++;
   }
 

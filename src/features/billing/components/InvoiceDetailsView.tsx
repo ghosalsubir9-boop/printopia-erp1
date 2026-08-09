@@ -46,6 +46,7 @@ import {
 } from 'lucide-react';
 import { GSTInvoice, InvoiceStatus } from '../types';
 import { BillingApiService } from '../api';
+import DocumentPdfPreviewModal from '../../../components/DocumentPdfPreviewModal';
 
 interface InvoiceDetailsViewProps {
   invoiceId: string;
@@ -55,6 +56,7 @@ interface InvoiceDetailsViewProps {
 
 export default function InvoiceDetailsView({ invoiceId, onBack, onPrint }: InvoiceDetailsViewProps) {
   const [invoice, setInvoice] = useState<GSTInvoice | null>(null);
+  const [pdfModalOpen, setPdfModalOpen] = useState(false);
   
   // Modals state
   const [openPaymentModal, setOpenPaymentModal] = useState(false);
@@ -403,32 +405,21 @@ export default function InvoiceDetailsView({ invoiceId, onBack, onPrint }: Invoi
           <Button
             variant="outlined"
             color="primary"
-            startIcon={<Printer size={16} />}
-            onClick={() => onPrint(invoice.id)}
+            startIcon={<FileText size={16} />}
+            onClick={() => setPdfModalOpen(true)}
             sx={{ fontWeight: 'bold' }}
           >
-            Print GST Invoice
-          </Button>
-          <Button
-            variant="contained"
-            color="primary"
-            onClick={async () => {
-              try {
-                const { DocumentPdfService } = await import('../../../utils/DocumentPdfService');
-                const { CompanySettingsService } = await import('../../../services/CompanySettingsService');
-                const companyDetails = CompanySettingsService.getCompanyBrandingForDocument(invoice);
-                await DocumentPdfService.generateGstInvoicePdf(invoice, companyDetails);
-              } catch(e) {
-                console.error("PDF generation failed", e);
-                alert("Failed to generate PDF. Check console for details.");
-              }
-            }}
-            sx={{ fontWeight: 'bold' }}
-          >
-            Download PDF
+            Preview / Print / PDF
           </Button>
         </Box>
       </Box>
+
+      <DocumentPdfPreviewModal
+        open={pdfModalOpen}
+        onClose={() => setPdfModalOpen(false)}
+        documentType="gst_invoice"
+        documentData={invoice}
+      />
 
       <Grid container spacing={3}>
         {/* Left Side: General Invoice Details */}

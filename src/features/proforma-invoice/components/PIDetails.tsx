@@ -45,6 +45,7 @@ import { ProformaInvoice, PIStatus, PIPayment } from '../types';
 import { CompanySettingsService } from '../../../services/CompanySettingsService';
 import { PIApiService } from '../services/api';
 import { PICalculationService } from '../services/PICalculationService';
+import DocumentPdfPreviewModal from '../../../components/DocumentPdfPreviewModal';
 
 interface PIDetailsProps {
   invoice: ProformaInvoice;
@@ -61,6 +62,7 @@ export default function PIDetails({ invoice, onBack, onEdit, onCreateProductionO
   const [isPaymentDialogOpen, setIsPaymentDialogOpen] = useState(false);
   const [isRevisionDialogOpen, setIsRevisionDialogOpen] = useState(false);
   const [isStatusDialogOpen, setIsStatusDialogOpen] = useState(false);
+  const [pdfModalOpen, setPdfModalOpen] = useState(false);
   const [newStatus, setNewStatus] = useState<PIStatus | ''>('');
   const [statusRemarks, setStatusRemarks] = useState('');
   const [revisionReason, setRevisionReason] = useState('');
@@ -241,20 +243,17 @@ export default function PIDetails({ invoice, onBack, onEdit, onCreateProductionO
           {invoice.isLocked ? 'Locked' : 'Edit PI'}
         </Button>
 
-        <Button variant="outlined" startIcon={<PdfIcon />} onClick={async () => {
-          try {
-            const { DocumentPdfService } = await import('../../../utils/DocumentPdfService');
-            const { CompanySettingsService } = await import('../../../services/CompanySettingsService');
-            const companyDetails = CompanySettingsService.getCompanyBrandingForDocument(invoice);
-            await DocumentPdfService.generateProformaInvoicePdf(invoice, companyDetails);
-          } catch(e) {
-            console.error("PDF generation failed", e);
-            alert("Failed to generate PDF. Check console for details.");
-          }
-        }} sx={{ borderRadius: 2 }}>
-          Download PDF
+        <Button variant="outlined" startIcon={<PdfIcon />} onClick={() => setPdfModalOpen(true)} sx={{ borderRadius: 2 }}>
+          Preview / Print PDF
         </Button>
       </Box>
+
+      <DocumentPdfPreviewModal
+        open={pdfModalOpen}
+        onClose={() => setPdfModalOpen(false)}
+        documentType="proforma_invoice"
+        documentData={invoice}
+      />
 
       <Grid container spacing={3}>
         <Grid size={{ xs: 12, lg: 8 }}>

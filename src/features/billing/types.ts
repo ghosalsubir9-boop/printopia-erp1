@@ -167,6 +167,8 @@ export interface CreditNoteItem {
 
 export interface CreditNote {
   id: string;
+  companyId?: string;
+  companySnapshot?: string;
   creditNoteNumber: string; // CN-2026-000001
   creditNoteDate: string;
   invoiceId: string;

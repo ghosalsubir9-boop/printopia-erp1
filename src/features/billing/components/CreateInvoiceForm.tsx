@@ -152,7 +152,7 @@ export default function CreateInvoiceForm({ onBack, onSuccess }: CreateInvoiceFo
 
     // Load active invoices to calculate real previously invoiced quantity
     const invoices = await BillingApiService.getInvoices();
-    const activeInvoices = invoices.filter(inv => inv.status !== 'Draft' && inv.status !== 'Cancelled');
+    const activeInvoices = invoices.filter(inv => inv.status !== 'Cancelled');
 
     // Map PI items to GST Invoice items with partial tracking
     const piItems: GSTInvoiceItem[] = pi.items.map((piItem: any) => {
@@ -227,7 +227,7 @@ export default function CreateInvoiceForm({ onBack, onSuccess }: CreateInvoiceFo
 
     // Load active invoices to calculate real previously invoiced quantity
     const invoices = await BillingApiService.getInvoices();
-    const activeInvoices = invoices.filter(inv => inv.status !== 'Draft' && inv.status !== 'Cancelled');
+    const activeInvoices = invoices.filter(inv => inv.status !== 'Cancelled');
 
     // Load all dispatches and production orders
     const allDispatches = await DispatchApiService.getDispatches();
@@ -384,50 +384,24 @@ export default function CreateInvoiceForm({ onBack, onSuccess }: CreateInvoiceFo
 
   // Perform invoice totals computation
   const calculateTotals = () => {
-    const subtotal = items.reduce((sum, item) => sum + item.itemAmount, 0);
-    const itemDiscount = items.reduce((sum, item) => sum + item.discount, 0);
-    
-    // Taxable Amount = Subtotal of taxable amounts - invoice discount
-    const sumItemTaxable = items.reduce((sum, item) => sum + item.taxableAmount, 0);
-    const taxableAmount = Math.max(0, sumItemTaxable - invoiceDiscount);
-
-    // GST Taxes logic
-    const sameState = customerStateCode === companyStateCode;
-    let cgst = 0;
-    let sgst = 0;
-    let igst = 0;
-
-    items.forEach(item => {
-      const itemTaxableShare = (item.taxableAmount / (sumItemTaxable || 1)) * taxableAmount;
-      const taxRate = item.gstRate || 18;
-      const taxAmt = itemTaxableShare * (taxRate / 100);
-
-      if (sameState) {
-        cgst += taxAmt / 2;
-        sgst += taxAmt / 2;
-      } else {
-        igst += taxAmt;
-      }
-    });
-
-    // Rounding off
-    const rawTotal = taxableAmount + cgst + sgst + igst;
-    const roundedTotal = Math.round(rawTotal);
-    const roundOff = parseFloat((roundedTotal - rawTotal).toFixed(2));
-
-    // Assume 0 advance adjusted initially unless imported
+    const calc = BillingApiService.recalculateInvoiceItemsAndTotals(
+      items,
+      invoiceDiscount,
+      customerStateCode,
+      companyStateCode
+    );
     const advanceAdjusted = selectedPI ? selectedPI.advanceAmount || 0 : 0;
-    const netPayable = Math.max(0, roundedTotal - advanceAdjusted);
+    const netPayable = Math.max(0, calc.grandTotal - advanceAdjusted);
 
     return {
-      subtotal,
-      itemDiscount,
-      taxableAmount,
-      cgst: Math.round(cgst * 100) / 100,
-      sgst: Math.round(sgst * 100) / 100,
-      igst: Math.round(igst * 100) / 100,
-      roundOff,
-      grandTotal: roundedTotal,
+      subtotal: calc.subtotal,
+      itemDiscount: calc.itemDiscount,
+      taxableAmount: calc.taxableAmount,
+      cgst: calc.cgst,
+      sgst: calc.sgst,
+      igst: calc.igst,
+      roundOff: calc.roundOff,
+      grandTotal: calc.grandTotal,
       advanceAdjusted,
       netPayable
     };
@@ -504,6 +478,15 @@ export default function CreateInvoiceForm({ onBack, onSuccess }: CreateInvoiceFo
     }
 
     try {
+      const calc = BillingApiService.recalculateInvoiceItemsAndTotals(
+        items,
+        invoiceDiscount,
+        customerStateCode,
+        companyStateCode
+      );
+      const advanceAdjusted = selectedPI ? selectedPI.advanceAmount || 0 : 0;
+      const netPayable = Math.max(0, calc.grandTotal - advanceAdjusted);
+
       const payload: Partial<GSTInvoice> = {
         invoiceDate,
         customerId: customer.id,
@@ -517,29 +500,35 @@ export default function CreateInvoiceForm({ onBack, onSuccess }: CreateInvoiceFo
         linkedPiNumber: selectedPI ? selectedPI.piNumber : undefined,
         linkedPiId: selectedPI ? selectedPI.id : undefined,
         linkedDcNumber: selectedDC ? selectedDC.challanNumber : undefined,
-        linkedDcId: selectedDC ? selectedDC.id : undefined,
+        linkedDcId: selectedDC ? [selectedDC.id] : undefined,
         salesExecutive,
         paymentTerms,
         dueDate,
         ewayBillNumber,
         transportDetails,
         remarks,
-        status: isDraft ? 'Draft' : 'Finalized',
-        items,
-        subtotal: totals.subtotal,
-        itemDiscount: totals.itemDiscount,
+        status: 'Draft', // Always save initial payload as Draft
+        items: calc.items,
+        subtotal: calc.subtotal,
+        itemDiscount: calc.itemDiscount,
         invoiceDiscount,
-        taxableAmount: totals.taxableAmount,
-        cgst: totals.cgst,
-        sgst: totals.sgst,
-        igst: totals.igst,
-        roundOff: totals.roundOff,
-        grandTotal: totals.grandTotal,
-        advanceAdjusted: totals.advanceAdjusted,
-        netPayable: totals.netPayable
+        taxableAmount: calc.taxableAmount,
+        cgst: calc.cgst,
+        sgst: calc.sgst,
+        igst: calc.igst,
+        roundOff: calc.roundOff,
+        grandTotal: calc.grandTotal,
+        advanceAdjusted,
+        netPayable,
+        balanceDue: netPayable
       };
 
-      await BillingApiService.saveInvoice(payload);
+      const savedInvoice = await BillingApiService.saveInvoice(payload);
+
+      if (!isDraft) {
+        await BillingApiService.finalizeInvoice(savedInvoice.id);
+      }
+
       onSuccess();
     } catch (e: any) {
       setError(e.message || 'Failed to save GST invoice.');
