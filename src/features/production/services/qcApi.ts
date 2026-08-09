@@ -60,6 +60,18 @@ export class QCApiService {
     await delay(300);
     const companyId = AuthService.requireCurrentCompanyId();
     const currentUser = AuthService.getCurrentUser();
+    
+    // 1. Role Guard
+    if (!currentUser || !['COMPANY_ADMIN', 'SUPER_ADMIN'].includes(currentUser.role)) {
+      throw new Error('Unauthorized: Only COMPANY_ADMIN or SUPER_ADMIN can authorize QC inspections.');
+    }
+
+    // 2. QC Quantity Validation: Approved + Rejected + Rework = Checked Quantity
+    const { approvedQuantity, rejectedQuantity, reworkQuantity, checkedQuantity } = inspection;
+    if (approvedQuantity + rejectedQuantity + reworkQuantity !== checkedQuantity) {
+      throw new Error(`QC Quantity Mismatch: Approved (${approvedQuantity}) + Rejected (${rejectedQuantity}) + Rework (${reworkQuantity}) must equal Checked Quantity (${checkedQuantity}).`);
+    }
+
     const list = this.getStoredInspections();
 
     // Auto QC Number: QC-YYYY-NNNN
@@ -99,13 +111,32 @@ export class QCApiService {
 
     if (newInspection.reworkQuantity > 0) {
       updatedJobStatus = 'Rework Required';
-    } else if (newInspection.qcStatus === 'Approved') {
-      updatedJobStatus = 'Ready for Dispatch';
-    } else if (newInspection.qcStatus === 'Partially Approved') {
-      // Partial approval allows partial dispatch
-      updatedJobStatus = 'Ready for Dispatch';
-    } else if (newInspection.qcStatus === 'Rejected') {
-      updatedJobStatus = 'QC'; // remains in QC or we could keep as QC
+    } else if (newInspection.qcStatus === 'Approved' && newInspection.rejectedQuantity === 0) {
+      let requiresPacking = false;
+      try {
+        const { JobCardApiService } = await import('./jobCardApi');
+        const cards = await JobCardApiService.getJobCards().catch(() => []);
+        const card = cards.find(c => 
+          c.poId === newInspection.poId && 
+          c.companyId === newInspection.companyId && 
+          c.items.some(i => i.jobItemId === newInspection.jobItemId)
+        );
+        if (card) {
+          const jobItem = card.items.find(i => i.jobItemId === newInspection.jobItemId);
+          if (jobItem) {
+            requiresPacking = (jobItem.specification?.toLowerCase().includes('pack') || 
+                              jobItem.specialProcess?.toLowerCase().includes('pack') || 
+                              jobItem.specialNotes?.toLowerCase().includes('pack') || 
+                              (jobItem.finishingTasks && jobItem.finishingTasks.some(t => t.taskName.toLowerCase().includes('pack')))) ?? false;
+          }
+        }
+      } catch (e) {
+        console.error('Error determining packing requirement in QC', e);
+      }
+      
+      updatedJobStatus = requiresPacking ? 'Packing' : 'Ready for Dispatch';
+    } else if (newInspection.qcStatus === 'Rejected' || newInspection.rejectedQuantity > 0) {
+      updatedJobStatus = 'QC'; 
     }
 
     if (updatedJobStatus) {
@@ -126,6 +157,13 @@ export class QCApiService {
 
   public static async updateInspection(id: string, updatedFields: Partial<QCInspection>): Promise<QCInspection> {
     await delay(300);
+    const currentUser = AuthService.getCurrentUser();
+    
+    // Role Guard
+    if (!currentUser || !['COMPANY_ADMIN', 'SUPER_ADMIN'].includes(currentUser.role)) {
+      throw new Error('Unauthorized: Only COMPANY_ADMIN or SUPER_ADMIN can edit QC inspections.');
+    }
+
     const list = this.getStoredInspections();
     const index = list.findIndex(item => item.id === id);
 

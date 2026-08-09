@@ -220,6 +220,39 @@ export class ProductionApiService {
     return updatedOrder;
   }
 
+  public static async syncPOStatus(poId: string): Promise<void> {
+    const order = await this.getOrderById(poId);
+    if (!order) return;
+
+    const { JobCardApiService } = await import('./jobCardApi');
+    const jobCards = await JobCardApiService.getJobCards();
+    const poJobCards = jobCards.filter(jc => jc.poId === poId && jc.status !== 'Cancelled');
+    
+    if (poJobCards.length === 0) return;
+
+    const convertedItemIds = new Set(poJobCards.map(jc => jc.productionOrderItemId));
+    const allItemsConverted = order.items.every(item => convertedItemIds.has(item.id));
+    
+    const allJCsDelivered = poJobCards.every(jc => jc.status === 'Delivered');
+    const anyDispatched = poJobCards.some(jc => ['Partially Dispatched', 'Dispatched', 'Delivered'].includes(jc.status));
+
+    let newStatus = order.status;
+    if (allItemsConverted && allJCsDelivered) {
+      newStatus = 'Completed';
+    } else if (anyDispatched) {
+      newStatus = 'Partially Dispatched';
+    } else if (allItemsConverted) {
+      // Keep as Fully Converted or In Production if that's where it was
+      if (order.status === 'Approved' || order.status === 'Partially Converted') {
+        newStatus = 'Fully Converted';
+      }
+    }
+
+    if (newStatus !== order.status) {
+      await this.updateOrder(poId, { status: newStatus });
+    }
+  }
+
   /**
    * Helper to initialize a PO from an approved PI
    */

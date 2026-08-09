@@ -83,11 +83,13 @@ const JOBCARD_PROGRESS_MAP: Record<JobCardStatus, number> = {
   'QC Pending': 92,
   'QC': 92,
   'Rework': 70,
+  'Packing': 93,
   'Ready for Dispatch': 95,
   'Partially Dispatched': 98,
   'Dispatched': 100,
   'Delivered': 100,
-  'Cancelled': 0
+  'Cancelled': 0,
+  'Completed': 100
 };
 
 const FinishingTaskRow = ({ task, idx, onStart, onComplete }: { task: FinishingTask, idx: number, onStart: (idx: number, operator: string) => void, onComplete: (idx: number, notes: string) => void }) => {
@@ -368,12 +370,18 @@ export default function ProductionExecutionDashboard() {
   const handleIssuePaper = async () => {
     if (!selectedCard) return;
     const item = selectedCard.items[0];
+
+    if (!selectedCard.customerId || selectedCard.customerId.trim() === '') {
+      alert("Customer reference is missing from this Job Card.");
+      return;
+    }
+
     try {
       // 1. Create Paper Issue Slip
-      await PaperIssueApiService.createSlip({
+      const createdSlip = await PaperIssueApiService.createSlip({
         poId: selectedCard.poId,
         poNumber: selectedCard.poNumber,
-        customerId: selectedCard.customerCode || 'CUST-001',
+        customerId: selectedCard.customerId,
         customerName: selectedCard.customerName,
         jobItemId: item.jobItemId,
         jobItemIndex: 1,
@@ -389,19 +397,24 @@ export default function ProductionExecutionDashboard() {
         issuedBy: paperIssuedBy,
         receivedBy: paperReceivedBy,
         remarks: `Issued from Shop-floor Dashboard. Wastage allowed: ${paperWastage}`,
-        status: 'Fully Issued',
+        status: 'Partially Issued',
         issueDate: new Date().toISOString().split('T')[0],
         deliveryDate: selectedCard.expectedDeliveryDate,
       } as any);
 
-      // 2. Transition Job Card
-      await JobCardApiService.transitionJobCardStatus(
-        selectedCard.id,
-        'Paper Issued',
-        `Paper Issue Slip ${paperSlipNo} created. Issued ${paperIssuedQty} sheets.`
-      );
+      if (createdSlip.status === 'Fully Issued') {
+        // 2. Transition Job Card ONLY if fully issued
+        await JobCardApiService.transitionJobCardStatus(
+          selectedCard.id,
+          'Paper Issued',
+          `Paper Issue Slip ${paperSlipNo} created. Issued ${paperIssuedQty} sheets.`
+        );
+        showNotification('Paper requirement fully issued and Job Card transitioned.');
+      } else {
+        const remaining = (item.materials?.paperEstimated || 0) - createdSlip.totalIssuedSheets;
+        showNotification(`Paper issued partially. ${remaining} sheets remaining.`);
+      }
 
-      showNotification('Paper successfully issued and Job Card transitioned.');
       loadData();
       handleCloseDeck();
     } catch (err: any) {
@@ -412,12 +425,18 @@ export default function ProductionExecutionDashboard() {
   const handleIssuePlates = async () => {
     if (!selectedCard) return;
     const item = selectedCard.items[0];
+
+    if (!selectedCard.customerId || selectedCard.customerId.trim() === '') {
+      alert("Customer reference is missing from this Job Card.");
+      return;
+    }
+
     try {
       // 1. Create Plate Issue Slip
-      await PlateIssueApiService.createSlip({
+      const createdSlip = await PlateIssueApiService.createSlip({
         poId: selectedCard.poId,
         poNumber: selectedCard.poNumber,
-        customerId: selectedCard.customerCode || 'CUST-001',
+        customerId: selectedCard.customerId,
         customerName: selectedCard.customerName,
         jobItemId: item.jobItemId,
         jobItemIndex: 1,
@@ -435,19 +454,24 @@ export default function ProductionExecutionDashboard() {
         issuedBy: currentUser?.userName || 'System',
         receivedBy: plateMaker,
         remarks: 'Issued from Shop-floor Dashboard.',
-        status: 'Fully Issued',
+        status: 'Partially Issued',
         issueDate: new Date().toISOString().split('T')[0],
         deliveryDate: selectedCard.expectedDeliveryDate,
       } as any);
 
-      // 2. Transition Job Card
-      await JobCardApiService.transitionJobCardStatus(
-        selectedCard.id,
-        'Plate Issued',
-        `Plate Issue Slip ${plateSlipNo} completed. Issued ${plateQty} plates.`
-      );
+      if (createdSlip.status === 'Fully Issued') {
+        // 2. Transition Job Card
+        await JobCardApiService.transitionJobCardStatus(
+          selectedCard.id,
+          'Plate Issued',
+          `Plate Issue Slip ${plateSlipNo} completed. Issued ${plateQty} plates.`
+        );
+        showNotification('Plates successfully issued and Job Card transitioned.');
+      } else {
+        const remaining = (item.materials?.plateEstimated || 0) - createdSlip.totalIssuedPlates;
+        showNotification(`Plates issued partially. ${remaining} plates remaining.`);
+      }
 
-      showNotification('Plates successfully issued and Job Card transitioned.');
       loadData();
       handleCloseDeck();
     } catch (err: any) {
@@ -706,7 +730,7 @@ export default function ProductionExecutionDashboard() {
           goodSheets: printedQty,
           wasteSheets: printedWastage,
           actualSheets: printedQty + printedWastage
-        } as any,
+        },
         `Printing floor execution completed.`
       );
 
@@ -745,7 +769,7 @@ export default function ProductionExecutionDashboard() {
     const item = selectedCard.items[0];
     try {
       // Log custom completion history
-      const nextStatus = (finishingStage === 'Packing' ? 'Ready for Dispatch' : 'QC') as JobCardStatus;
+      const nextStatus = 'QC';
       
       await JobCardApiService.transitionJobCardStatus(
         selectedCard.id,
@@ -764,6 +788,21 @@ export default function ProductionExecutionDashboard() {
   const handleQCInspection = async () => {
     if (!selectedCard) return;
     const item = selectedCard.items[0];
+
+    // Enforce QC Pass Rules:
+    const checkedQty = item.quantity; // Assuming we check the full ordered quantity
+    const totalInput = qcPassedQty + qcRejectedQty + qcReworkQty;
+    
+    if (totalInput !== checkedQty) {
+      alert(`QC total quantities (${totalInput}) must equal the checked quantity (${checkedQty}).`);
+      return;
+    }
+
+    if (qcPassed && (qcRejectedQty > 0 || qcReworkQty > 0)) {
+      alert("Cannot Pass QC with Rejects or Rework quantities. Please mark as Rework Required (Fail QC) or set Rejected/Rework to 0.");
+      return;
+    }
+
     try {
       // 1. Save QC Inspection slip
       await QCApiService.createInspection({
@@ -786,7 +825,14 @@ export default function ProductionExecutionDashboard() {
       } as any);
 
       // 2. Transition Job Card status
-      const nextStatus: JobCardStatus = qcPassed ? 'Ready for Dispatch' : 'Rework';
+      const requiresPacking = item.specification?.toLowerCase().includes('pack') || 
+                              item.specialProcess?.toLowerCase().includes('pack') || 
+                              item.specialNotes?.toLowerCase().includes('pack') || 
+                              item.finishingTasks?.some(t => t.taskName.toLowerCase().includes('pack')) ||
+                              false;
+      const nextStatus: JobCardStatus = qcPassed 
+        ? (requiresPacking ? 'Packing' : 'Ready for Dispatch') 
+        : 'Rework';
       await JobCardApiService.transitionJobCardStatus(
         selectedCard.id,
         nextStatus,
@@ -871,11 +917,11 @@ export default function ProductionExecutionDashboard() {
   const countPlatePending = jobCards.filter(jc => jc.status === 'Paper Issued' && jc.items.some(i => i.plate && i.plate !== 'None' && i.plate !== 'Not Required' && (i.materials?.plateActual || 0) < (i.materials?.plateEstimated || 0))).length;
   const countQueued = jobCards.filter(jc => jc.status === 'Machine Queue').length;
   const countPrinting = jobCards.filter(jc => jc.status === 'Printing').length;
-  const countCutting = jobCards.filter(jc => jc.status === 'QC' && jc.items.some(i => i.cutting && i.cutting !== 'None')).length; // custom metric mapping
-  const countFinishing = jobCards.filter(jc => ['Cutting', 'QC'].includes(jc.status)).length;
+  const countCutting = jobCards.filter(jc => ['Cutting Pending', 'Cutting In Progress', 'Cutting Completed'].includes(jc.status)).length;
+  const countFinishing = jobCards.filter(jc => ['Finishing Pending', 'Finishing In Progress', 'Finishing Completed'].includes(jc.status)).length;
   const countQCPending = jobCards.filter(jc => jc.status === 'QC').length;
   const countRework = jobCards.filter(jc => jc.status === 'Rework').length;
-  const countPacking = jobCards.filter(jc => jc.status === 'QC' && jc.items.some(i => i.status === 'QC')).length; // waiting for packing
+  const countPacking = jobCards.filter(jc => jc.status === 'Packing').length;
   const countReadyDispatch = jobCards.filter(jc => jc.status === 'Ready for Dispatch').length;
   const countOverdue = jobCards.filter(jc => {
     return jc.expectedDeliveryDate < todayStr && !['Dispatched', 'Delivered', 'Cancelled'].includes(jc.status);
@@ -1820,7 +1866,7 @@ export default function ProductionExecutionDashboard() {
                     )}
 
                     {/* H. PACKING SECTION */}
-                    {selectedCard.status === 'Ready for Dispatch' && (
+                    {selectedCard.status === 'Packing' && (
                       <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
                         <Alert severity="info">
                           Role Required: <strong>PACKING FLOOR OPERATOR</strong>. Action: <strong>Verify Packing Specs</strong>.
@@ -1878,7 +1924,7 @@ export default function ProductionExecutionDashboard() {
                     )}
 
                     {/* I. TERMINAL / TERMINATED WORKFLOWS */}
-                    {['Dispatched', 'Delivered', 'Cancelled'].includes(selectedCard.status) && (
+                    {['Completed', 'Dispatched', 'Delivered', 'Cancelled'].includes(selectedCard.status) && (
                       <Box sx={{ py: 3, textAlign: 'center' }}>
                         <Alert severity="success">
                           This Job Card has reached its terminal workflow state: <strong>{selectedCard.status}</strong>.

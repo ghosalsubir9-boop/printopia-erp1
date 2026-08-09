@@ -14,32 +14,25 @@ import {
   TextField,
   Typography,
   Divider,
-  Checkbox,
-  FormControlLabel,
-  FormGroup,
-  Paper,
 } from '@mui/material';
 import { DispatchRecord } from '../types';
 import { DispatchApiService } from '../services/dispatchApi';
 import { DeliveryChallanApiService } from '../services/deliveryChallanApi';
 
 interface DeliveryChallanFormProps {
+  preselectedCustomer?: string;
+  preselectedDispatchIds?: string[];
   onSave: () => void;
   onCancel: () => void;
 }
 
-export default function DeliveryChallanForm({ onSave, onCancel }: DeliveryChallanFormProps) {
+export default function DeliveryChallanForm({ preselectedCustomer, preselectedDispatchIds, onSave, onCancel }: DeliveryChallanFormProps) {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
-  // Lists
-  const [availableDispatches, setAvailableDispatches] = useState<DispatchRecord[]>([]);
-  const [selectedDispatchIds, setSelectedDispatchIds] = useState<string[]>([]);
-  const [selectedCustomer, setSelectedCustomer] = useState<string>('');
-
   // Form Fields
   const [challanDate, setChallanDate] = useState(new Date().toISOString().split('T')[0]);
-  const [customerName, setCustomerName] = useState('');
+  const [customerName, setCustomerName] = useState(preselectedCustomer || '');
   const [customerId, setCustomerId] = useState('');
   const [billingAddress, setBillingAddress] = useState('');
   const [deliveryAddress, setDeliveryAddress] = useState('');
@@ -58,121 +51,60 @@ export default function DeliveryChallanForm({ onSave, onCancel }: DeliveryChalla
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
 
   useEffect(() => {
-    loadAvailableDispatches();
-  }, []);
+    if (preselectedDispatchIds) {
+      loadDispatchData(preselectedDispatchIds);
+    } else {
+      setLoading(false);
+    }
+  }, [preselectedDispatchIds]);
 
-  const loadAvailableDispatches = async () => {
+  const loadDispatchData = async (ids: string[]) => {
     setLoading(true);
     try {
-      const [dispatches, challans] = await Promise.all([
-        DispatchApiService.getDispatches(),
-        DeliveryChallanApiService.getChallans(),
-      ]);
+      const selectedDisps: DispatchRecord[] = [];
+      for (const id of ids) {
+        const d = await DispatchApiService.getDispatchById(id);
+        if (d) selectedDisps.push(d);
+      }
 
-      // Identify already used dispatches
-      const usedIds = new Set<string>();
-      challans.forEach((c) => {
-        if (c.dispatchRecordIds) {
-          c.dispatchRecordIds.forEach((id) => usedIds.add(id));
-        }
-      });
+      if (selectedDisps.length > 0) {
+        const first = selectedDisps[0];
+        setCustomerName(first.customerName);
+        setCustomerId(first.customerId);
+        setDeliveryAddress(first.deliveryAddress || '');
+        setTransportMode(first.transportMode || '');
+        setVehicleNumber(first.vehicleNumber || '');
+        setLrNumber(first.lrNumber || '');
+        setContactPerson(first.contactPerson || '');
 
-      // Filter active and unused
-      const unused = dispatches.filter(
-        (d) => d.status !== 'Cancelled' && !usedIds.has(d.id)
-      );
+        const totalQty = selectedDisps.reduce((sum, d) => 
+          sum + d.items.reduce((itemSum, i) => itemSum + i.dispatchQuantity, 0), 0
+        );
+        const totalPkgs = selectedDisps.reduce((sum, d) => sum + d.numberOfPackages, 0);
+        
+        setDispatchQuantity(totalQty);
+        setNumberOfPackages(totalPkgs);
 
-      setAvailableDispatches(unused);
-    } catch (e) {
-      console.error('Failed to load dispatches for challan creation:', e);
+        const pos = Array.from(new Set(selectedDisps.flatMap(d => d.items.map(i => i.poNumber)))).join(', ');
+        setProductionOrderReference(pos);
+
+        const specs = selectedDisps.flatMap(d => d.items.map(i => 
+          `${i.dispatchQuantity.toLocaleString()}x ${i.productName} (JC: ${i.jobCardNumber})`
+        )).join('\n');
+        setProductSpecification(specs);
+      }
+    } catch (err) {
+      console.error('Error loading dispatches for DC:', err);
     } finally {
       setLoading(false);
     }
   };
 
-  // When selected dispatches change, update computed form fields
-  useEffect(() => {
-    if (selectedDispatchIds.length === 0) {
-      setSelectedCustomer('');
-      setCustomerName('');
-      setCustomerId('');
-      setDeliveryAddress('');
-      setProductionOrderReference('');
-      setProductSpecification('');
-      setDispatchQuantity(0);
-      setNumberOfPackages(0);
-      setTransportMode('');
-      setVehicleNumber('');
-      setLrNumber('');
-      setContactPerson('');
-      return;
-    }
-
-    const selectedDisps = availableDispatches.filter((d) =>
-      selectedDispatchIds.includes(d.id)
-    );
-
-    // Take the first one to populate base customer / address info
-    const firstDisp = selectedDisps[0];
-    setSelectedCustomer(firstDisp.customerId);
-    setCustomerName(firstDisp.customerName);
-    setCustomerId(firstDisp.customerId);
-    setDeliveryAddress(firstDisp.deliveryAddress || '');
-    setTransportMode(firstDisp.transportMode || '');
-    setVehicleNumber(firstDisp.vehicleNumber || '');
-    setLrNumber(firstDisp.lrNumber || '');
-    setContactPerson(firstDisp.contactPerson || '');
-
-    // Sum quantities & packages
-    const totalQty = selectedDisps.reduce((sum, d) => sum + d.currentDispatchQuantity, 0);
-    const totalPkgs = selectedDisps.reduce((sum, d) => sum + d.numberOfPackages, 0);
-    setDispatchQuantity(totalQty);
-    setNumberOfPackages(totalPkgs);
-
-    // Unique production order references
-    const pos = Array.from(new Set(selectedDisps.map((d) => d.productionOrderNumber))).join(', ');
-    setProductionOrderReference(pos);
-
-    // Specifications description
-    const specs = selectedDisps
-      .map((d) => `${d.currentDispatchQuantity.toLocaleString()}x ${d.productName} (${d.jobItemNumber})`)
-      .join('\n');
-    setProductSpecification(specs);
-  }, [selectedDispatchIds, availableDispatches]);
-
-  const handleToggleDispatch = (id: string, customerId: string) => {
-    if (selectedDispatchIds.includes(id)) {
-      setSelectedDispatchIds((prev) => prev.filter((item) => item !== id));
-    } else {
-      // Scoping check: Ensure all selected dispatches belong to the same customer
-      if (selectedCustomer && selectedCustomer !== customerId) {
-        setFormErrors({
-          dispatch: 'All dispatches in a single Delivery Challan must belong to the same customer.',
-        });
-        return;
-      }
-      setFormErrors({});
-      setSelectedDispatchIds((prev) => [...prev, id]);
-      setSelectedCustomer(customerId);
-    }
-  };
-
   const validateForm = (): boolean => {
     const errors: Record<string, string> = {};
-
-    if (selectedDispatchIds.length === 0) {
-      errors.dispatch = 'Please select at least one dispatch record to include.';
-    }
-    if (!challanDate) {
-      errors.challanDate = 'Challan date is required.';
-    }
-    if (!deliveryAddress.trim()) {
-      errors.deliveryAddress = 'Delivery address is required.';
-    }
-    if (!productSpecification.trim()) {
-      errors.productSpecification = 'Product specification is required.';
-    }
-
+    if (!challanDate) errors.challanDate = 'Challan date is required.';
+    if (!deliveryAddress) errors.deliveryAddress = 'Delivery address is required.';
+    if (!productSpecification) errors.productSpecification = 'Product specification is required.';
     setFormErrors(errors);
     return Object.keys(errors).length === 0;
   };
@@ -186,26 +118,33 @@ export default function DeliveryChallanForm({ onSave, onCancel }: DeliveryChalla
         challanDate,
         customerId,
         customerName,
+        customerCode: '', // Placeholder
+        billingAddressSnapshot: billingAddress,
+        deliveryAddressSnapshot: deliveryAddress,
+        contactPersonSnapshot: contactPerson,
+        phoneSnapshot: '',
         billingAddress,
         deliveryAddress,
         gstin,
         contactPerson,
         productionOrderReference,
-        piReference, // can be filled or empty
+        piReference,
         productSpecification,
         dispatchQuantity,
         numberOfPackages,
+        items: [], // Placeholder, should be resolved by service if needed
         transportMode,
         vehicleNumber,
         lrNumber,
         remarks,
-        dispatchRecordIds: selectedDispatchIds,
+        preparedBy: '', // Set by backend
+        dispatchIds: preselectedDispatchIds || [],
+        dispatchRecordIds: preselectedDispatchIds || [],
       });
-
       onSave();
     } catch (e) {
       console.error('Failed to create delivery challan:', e);
-      setFormErrors({ submit: e instanceof Error ? e.message : 'Failed to save delivery challan.' });
+      setFormErrors({ submit: e instanceof Error ? e.message : 'Failed to save DC.' });
     } finally {
       setSaving(false);
     }
@@ -219,317 +158,145 @@ export default function DeliveryChallanForm({ onSave, onCancel }: DeliveryChalla
     );
   }
 
-  // Filter available dispatches shown to user if a customer is already selected
-  const filteredAvailableDispatches = selectedCustomer
-    ? availableDispatches.filter((d) => d.customerId === selectedCustomer)
-    : availableDispatches;
-
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
       <Typography variant="h5" sx={{ fontWeight: 'bold' }}>
-        Generate Delivery Challan
+        Generate Delivery Challan — {customerName}
       </Typography>
 
-      <Grid container spacing={3}>
-        {/* Left Column: Select Dispatches */}
-        <Grid size={{ xs: 12, md: 5 }}>
-          <Card sx={{ borderRadius: 3, border: '1px solid', borderColor: 'divider', height: '100%' }}>
-            <CardContent sx={{ p: 3 }}>
-              <Typography variant="h6" sx={{ fontWeight: 'bold', mb: 1 }}>
-                Select Dispatch Records
-              </Typography>
-              <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 2 }}>
-                Only non-cancelled, undelivered dispatches are listed below. Once you select a dispatch, the list scopes to that customer.
-              </Typography>
-              <Divider sx={{ mb: 2 }} />
+      <Card sx={{ borderRadius: 3, border: '1px solid', borderColor: 'divider' }}>
+        <CardContent sx={{ p: 3 }}>
+          <Grid container spacing={3}>
+            <Grid size={{ xs: 12, md: 4 }}>
+              <TextField
+                fullWidth
+                type="date"
+                label="Challan Date"
+                value={challanDate}
+                onChange={(e) => setChallanDate(e.target.value)}
+                slotProps={{ inputLabel: { shrink: true } }}
+                error={!!formErrors.challanDate}
+                helperText={formErrors.challanDate}
+              />
+            </Grid>
 
-              {formErrors.dispatch && (
-                <Typography color="error" variant="caption" sx={{ display: 'block', mb: 2, fontWeight: 'medium' }}>
-                  {formErrors.dispatch}
-                </Typography>
-              )}
+            <Grid size={{ xs: 12, md: 4 }}>
+              <TextField
+                fullWidth
+                disabled
+                label="Customer"
+                value={customerName}
+              />
+            </Grid>
 
-              {availableDispatches.length === 0 ? (
-                <Box sx={{ py: 5, textAlign: 'center' }}>
-                  <Typography color="text.secondary" variant="body2">
-                    No pending dispatches available to create a challan.
-                  </Typography>
-                </Box>
-              ) : (
-                <FormGroup>
-                  <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5, maxHeight: '400px', overflowY: 'auto', pr: 1 }}>
-                    {filteredAvailableDispatches.map((disp) => {
-                      const isChecked = selectedDispatchIds.includes(disp.id);
-                      return (
-                        <Paper
-                          key={disp.id}
-                          variant="outlined"
-                          sx={{
-                            p: 1.5,
-                            borderRadius: 2,
-                            borderColor: isChecked ? 'primary.main' : 'divider',
-                            bgcolor: isChecked ? 'primary.50' : 'background.paper',
-                            cursor: 'pointer',
-                            '&:hover': { bgcolor: isChecked ? 'primary.50' : 'grey.50' },
-                          }}
-                          onClick={() => handleToggleDispatch(disp.id, disp.customerId)}
-                        >
-                          <FormControlLabel
-                            sx={{ width: '100%', margin: 0, alignItems: 'flex-start' }}
-                            control={
-                              <Checkbox
-                                size="small"
-                                checked={isChecked}
-                                onChange={() => handleToggleDispatch(disp.id, disp.customerId)}
-                                onClick={(e) => e.stopPropagation()}
-                              />
-                            }
-                            label={
-                              <Box sx={{ ml: 1 }}>
-                                <Typography variant="body2" sx={{ fontWeight: 'bold' }}>
-                                  {disp.dispatchNumber} ({disp.dispatchDate})
-                                </Typography>
-                                <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
-                                  PO: {disp.productionOrderNumber} | {disp.jobItemNumber}
-                                </Typography>
-                                <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
-                                  Cust: {disp.customerName}
-                                </Typography>
-                                <Typography variant="caption" color="primary.main" sx={{ fontWeight: 'bold', display: 'block', mt: 0.5 }}>
-                                  Qty: {disp.currentDispatchQuantity.toLocaleString()} | Pkgs: {disp.numberOfPackages}
-                                </Typography>
-                              </Box>
-                            }
-                          />
-                        </Paper>
-                      );
-                    })}
-                  </Box>
-                </FormGroup>
-              )}
+            <Grid size={{ xs: 12, md: 4 }}>
+              <TextField
+                fullWidth
+                label="GSTIN"
+                value={gstin}
+                onChange={(e) => setGstin(e.target.value)}
+              />
+            </Grid>
 
-              {selectedDispatchIds.length > 0 && (
-                <Box sx={{ mt: 3, p: 2, bgcolor: 'grey.50', borderRadius: 2, border: '1px dashed', borderColor: 'divider' }}>
-                  <Typography variant="body2" sx={{ fontWeight: 'bold', mb: 1 }}>
-                    Selection Summary
-                  </Typography>
-                  <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
-                    Customer: {customerName}
-                  </Typography>
-                  <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
-                    Selected: {selectedDispatchIds.length} dispatch(es)
-                  </Typography>
-                  <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
-                    Total Quantity: {dispatchQuantity.toLocaleString()}
-                  </Typography>
-                  <Button
-                    size="small"
-                    color="error"
-                    variant="text"
-                    sx={{ p: 0, minWidth: 0, mt: 1, textTransform: 'none', fontWeight: 'bold' }}
-                    onClick={() => {
-                      setSelectedDispatchIds([]);
-                      setSelectedCustomer('');
-                    }}
-                  >
-                    Clear Selection
-                  </Button>
-                </Box>
-              )}
-            </CardContent>
-          </Card>
-        </Grid>
+            <Grid size={{ xs: 12, md: 6 }}>
+              <TextField
+                fullWidth
+                disabled
+                label="PO Reference(s)"
+                value={productionOrderReference}
+              />
+            </Grid>
 
-        {/* Right Column: Challan Details Form */}
-        <Grid size={{ xs: 12, md: 7 }}>
-          <Card sx={{ borderRadius: 3, border: '1px solid', borderColor: 'divider' }}>
-            <CardContent sx={{ p: 3 }}>
-              <Typography variant="h6" sx={{ fontWeight: 'bold', mb: 2 }}>
-                Delivery Challan Information
-              </Typography>
-              <Divider sx={{ mb: 3 }} />
+            <Grid size={{ xs: 12, md: 6 }}>
+              <TextField
+                fullWidth
+                label="PI Reference (Optional)"
+                value={piReference}
+                onChange={(e) => setPiReference(e.target.value)}
+              />
+            </Grid>
 
-              <Grid container spacing={2.5}>
-                <Grid size={{ xs: 12, sm: 6 }}>
-                  <TextField
-                    fullWidth
-                    type="date"
-                    label="Challan Date"
-                    value={challanDate}
-                    onChange={(e) => setChallanDate(e.target.value)}
-                    slotProps={{ inputLabel: { shrink: true } }}
-                    error={!!formErrors.challanDate}
-                    helperText={formErrors.challanDate}
-                  />
-                </Grid>
+            <Grid size={{ xs: 12, md: 4 }}>
+              <TextField
+                fullWidth
+                disabled
+                label="Total Quantity"
+                value={dispatchQuantity.toLocaleString()}
+              />
+            </Grid>
 
-                <Grid size={{ xs: 12, sm: 6 }}>
-                  <TextField
-                    fullWidth
-                    disabled
-                    label="Customer (Auto-populated)"
-                    value={customerName || 'Select a dispatch record...'}
-                  />
-                </Grid>
+            <Grid size={{ xs: 12, md: 4 }}>
+              <TextField
+                fullWidth
+                disabled
+                label="Total Packages"
+                value={numberOfPackages}
+              />
+            </Grid>
 
-                <Grid size={{ xs: 12, sm: 6 }}>
-                  <TextField
-                    fullWidth
-                    label="Customer GSTIN"
-                    value={gstin}
-                    onChange={(e) => setGstin(e.target.value)}
-                    placeholder="Enter GSTIN if applicable"
-                  />
-                </Grid>
+            <Grid size={{ xs: 12, md: 4 }}>
+              <TextField
+                fullWidth
+                label="Contact Person"
+                value={contactPerson}
+                onChange={(e) => setContactPerson(e.target.value)}
+              />
+            </Grid>
 
-                <Grid size={{ xs: 12, sm: 6 }}>
-                  <TextField
-                    fullWidth
-                    label="Contact Person at Delivery"
-                    value={contactPerson}
-                    onChange={(e) => setContactPerson(e.target.value)}
-                    placeholder="e.g., Name and mobile"
-                  />
-                </Grid>
+            <Grid size={{ xs: 12 }}>
+              <TextField
+                fullWidth
+                multiline
+                rows={3}
+                label="Product Specifications"
+                value={productSpecification}
+                onChange={(e) => setProductSpecification(e.target.value)}
+                error={!!formErrors.productSpecification}
+                helperText={formErrors.productSpecification}
+              />
+            </Grid>
 
-                <Grid size={{ xs: 12, sm: 6 }}>
-                  <TextField
-                    fullWidth
-                    disabled
-                    label="Production Order Reference"
-                    value={productionOrderReference || 'Auto-populated'}
-                  />
-                </Grid>
+            <Grid size={{ xs: 12, md: 6 }}>
+              <TextField
+                fullWidth
+                multiline
+                rows={2}
+                label="Delivery Address"
+                value={deliveryAddress}
+                onChange={(e) => setDeliveryAddress(e.target.value)}
+                error={!!formErrors.deliveryAddress}
+                helperText={formErrors.deliveryAddress}
+              />
+            </Grid>
 
-                <Grid size={{ xs: 12, sm: 6 }}>
-                  <TextField
-                    fullWidth
-                    label="PI Reference (Optional)"
-                    value={piReference}
-                    onChange={(e) => setPiReference(e.target.value)}
-                    placeholder="e.g. PI-2026-0034"
-                  />
-                </Grid>
+            <Grid size={{ xs: 12, md: 6 }}>
+              <TextField
+                fullWidth
+                multiline
+                rows={2}
+                label="Remarks"
+                value={remarks}
+                onChange={(e) => setRemarks(e.target.value)}
+              />
+            </Grid>
 
-                <Grid size={{ xs: 12, sm: 6 }}>
-                  <TextField
-                    fullWidth
-                    disabled
-                    type="number"
-                    label="Dispatch Quantity"
-                    value={dispatchQuantity}
-                  />
-                </Grid>
-
-                <Grid size={{ xs: 12, sm: 6 }}>
-                  <TextField
-                    fullWidth
-                    disabled
-                    type="number"
-                    label="Number of Packages"
-                    value={numberOfPackages}
-                  />
-                </Grid>
-
-                <Grid size={{ xs: 12 }}>
-                  <TextField
-                    fullWidth
-                    multiline
-                    rows={3}
-                    label="Product Specifications (Auto-generated)"
-                    value={productSpecification}
-                    onChange={(e) => setProductSpecification(e.target.value)}
-                    error={!!formErrors.productSpecification}
-                    helperText={formErrors.productSpecification}
-                  />
-                </Grid>
-
-                <Grid size={{ xs: 12 }}>
-                  <TextField
-                    fullWidth
-                    multiline
-                    rows={2}
-                    label="Billing Address"
-                    value={billingAddress}
-                    onChange={(e) => setBillingAddress(e.target.value)}
-                    placeholder="Enter billing address if different..."
-                  />
-                </Grid>
-
-                <Grid size={{ xs: 12 }}>
-                  <TextField
-                    fullWidth
-                    multiline
-                    rows={2}
-                    label="Delivery Address"
-                    value={deliveryAddress}
-                    onChange={(e) => setDeliveryAddress(e.target.value)}
-                    error={!!formErrors.deliveryAddress}
-                    helperText={formErrors.deliveryAddress}
-                  />
-                </Grid>
-
-                <Grid size={{ xs: 12, sm: 4 }}>
-                  <TextField
-                    fullWidth
-                    label="Transport Mode"
-                    value={transportMode}
-                    onChange={(e) => setTransportMode(e.target.value)}
-                  />
-                </Grid>
-
-                <Grid size={{ xs: 12, sm: 4 }}>
-                  <TextField
-                    fullWidth
-                    label="Vehicle Number"
-                    value={vehicleNumber}
-                    onChange={(e) => setVehicleNumber(e.target.value)}
-                  />
-                </Grid>
-
-                <Grid size={{ xs: 12, sm: 4 }}>
-                  <TextField
-                    fullWidth
-                    label="LR Number"
-                    value={lrNumber}
-                    onChange={(e) => setLrNumber(e.target.value)}
-                  />
-                </Grid>
-
-                <Grid size={{ xs: 12 }}>
-                  <TextField
-                    fullWidth
-                    multiline
-                    rows={2}
-                    label="Remarks"
-                    value={remarks}
-                    onChange={(e) => setRemarks(e.target.value)}
-                  />
-                </Grid>
+            {formErrors.submit && (
+              <Grid size={{ xs: 12 }}>
+                <Typography color="error">{formErrors.submit}</Typography>
               </Grid>
+            )}
 
-              {formErrors.submit && (
-                <Typography color="error" variant="body2" sx={{ mt: 2 }}>
-                  {formErrors.submit}
-                </Typography>
-              )}
-
-              <Box sx={{ display: 'flex', gap: 2, justifyContent: 'flex-end', mt: 3 }}>
-                <Button variant="outlined" onClick={onCancel} disabled={saving}>
-                  Cancel
-                </Button>
-                <Button
-                  variant="contained"
-                  onClick={handleSave}
-                  disabled={saving || selectedDispatchIds.length === 0}
-                >
-                  {saving ? 'Saving...' : 'Generate Challan'}
-                </Button>
-              </Box>
-            </CardContent>
-          </Card>
-        </Grid>
-      </Grid>
+            <Grid size={{ xs: 12 }} sx={{ display: 'flex', gap: 2, justifyContent: 'flex-end' }}>
+              <Button variant="outlined" onClick={onCancel} disabled={saving}>
+                Cancel
+              </Button>
+              <Button variant="contained" onClick={handleSave} disabled={saving}>
+                {saving ? 'Generating...' : 'Generate Challan'}
+              </Button>
+            </Grid>
+          </Grid>
+        </CardContent>
+      </Card>
     </Box>
   );
 }

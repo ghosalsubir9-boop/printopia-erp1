@@ -35,6 +35,8 @@ import DeliveryChallanList from './DeliveryChallanList';
 import DeliveryChallanForm from './DeliveryChallanForm';
 import DeliveryChallanDetails from './DeliveryChallanDetails';
 
+import DeliveryTrackingList from './DeliveryTrackingList';
+
 interface ProductionModuleProps {
   initialPI?: ProformaInvoice | null;
   initialActiveTab?: number;
@@ -81,6 +83,10 @@ export default function ProductionModule({ initialPI, initialActiveTab }: Produc
   // Dispatch and Delivery Challan States
   const [currentDisp, setCurrentDisp] = useState<DispatchRecord | null>(null);
   const [currentChal, setCurrentChal] = useState<DeliveryChallan | null>(null);
+  const [preselectedDispCustomer, setPreselectedDispCustomer] = useState<string | undefined>(undefined);
+  const [preselectedDispJobCardIds, setPreselectedDispJobCardIds] = useState<string[] | undefined>(undefined);
+  const [preselectedChalCustomer, setPreselectedChalCustomer] = useState<string | undefined>(undefined);
+  const [preselectedChalDispatchIds, setPreselectedChalDispatchIds] = useState<string[] | undefined>(undefined);
   const [preselectedJobForDisp, setPreselectedJobForDisp] = useState<EnrichedJobItem | null>(null);
 
   // Phase-4 Production Tracker States
@@ -323,6 +329,7 @@ export default function ProductionModule({ initialPI, initialActiveTab }: Produc
                       <Tab label="Rework Tasks" sx={{ fontWeight: 'bold' }} />
                       <Tab label="Dispatch" sx={{ fontWeight: 'bold' }} />
                       <Tab label="Delivery Challan" sx={{ fontWeight: 'bold' }} />
+                      <Tab label="Delivery Tracking" sx={{ fontWeight: 'bold' }} />
                     </Tabs>
                   </Box>
                 )}
@@ -403,8 +410,9 @@ export default function ProductionModule({ initialPI, initialActiveTab }: Produc
 
                 {view === 'list' && tabIndex === 8 && (
                   <DispatchList
-                    onAdd={() => {
-                      setPreselectedJobForDisp(null);
+                    onAdd={(customer, ids) => {
+                      setPreselectedDispCustomer(customer);
+                      setPreselectedDispJobCardIds(ids);
                       setView('create_disp');
                     }}
                     onView={(record) => {
@@ -416,13 +424,25 @@ export default function ProductionModule({ initialPI, initialActiveTab }: Produc
 
                 {view === 'list' && tabIndex === 9 && (
                   <DeliveryChallanList
-                    onAdd={() => {
+                    onAdd={(customer, ids) => {
+                      setPreselectedChalCustomer(customer);
+                      setPreselectedChalDispatchIds(ids);
                       setView('create_chal');
                     }}
                     onView={(challan) => {
                       setCurrentChal(challan);
                       setView('details_chal');
                     }}
+                  />
+                )}
+
+                {view === 'list' && tabIndex === 10 && (
+                  <DeliveryTrackingList
+                    onView={(challan) => {
+                      setCurrentChal(challan);
+                      setView('details_chal');
+                    }}
+                    onRefresh={loadOrders}
                   />
                 )}
 
@@ -552,15 +572,18 @@ export default function ProductionModule({ initialPI, initialActiveTab }: Produc
                 {/* Dispatch Form View */}
                 {view === 'create_disp' && (
                   <DispatchForm
-                    preselectedJob={preselectedJobForDisp}
+                    preselectedCustomer={preselectedDispCustomer}
+                    preselectedJobCardIds={preselectedDispJobCardIds}
                     onSave={() => {
-                      setPreselectedJobForDisp(null);
+                      setPreselectedDispCustomer(undefined);
+                      setPreselectedDispJobCardIds(undefined);
                       setView('list');
                       setTabIndex(8);
                       loadOrders();
                     }}
                     onCancel={() => {
-                      setPreselectedJobForDisp(null);
+                      setPreselectedDispCustomer(undefined);
+                      setPreselectedDispJobCardIds(undefined);
                       setView('list');
                       setTabIndex(8);
                     }}
@@ -582,12 +605,18 @@ export default function ProductionModule({ initialPI, initialActiveTab }: Produc
                 {/* Delivery Challan Form View */}
                 {view === 'create_chal' && (
                   <DeliveryChallanForm
+                    preselectedCustomer={preselectedChalCustomer}
+                    preselectedDispatchIds={preselectedChalDispatchIds}
                     onSave={() => {
+                      setPreselectedChalCustomer(undefined);
+                      setPreselectedChalDispatchIds(undefined);
                       setView('list');
                       setTabIndex(9);
                       loadOrders();
                     }}
                     onCancel={() => {
+                      setPreselectedChalCustomer(undefined);
+                      setPreselectedChalDispatchIds(undefined);
                       setView('list');
                       setTabIndex(9);
                     }}

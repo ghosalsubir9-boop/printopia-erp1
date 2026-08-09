@@ -47,51 +47,80 @@ export class DispatchApiService {
     return item;
   }
 
-  public static async getDispatchesByJobItem(poId: string, jobItemId: string): Promise<DispatchRecord[]> {
-    await delay(100);
-    const companyId = AuthService.requireCurrentCompanyId();
-    const list = this.getStoredDispatches();
-    return list.filter(item => item.companyId === companyId && item.productionOrderId === poId && item.jobItemId === jobItemId);
-  }
-
   public static async createDispatch(
-    dispatch: Omit<DispatchRecord, 'id' | 'companyId' | 'dispatchNumber' | 'createdAt' | 'updatedAt' | 'totalDispatchedQuantity' | 'pendingDispatchQuantity' | 'status'>
+    dispatch: Omit<DispatchRecord, 'id' | 'companyId' | 'dispatchNumber' | 'createdAt' | 'updatedAt' | 'status' | 'preparedBy'>
   ): Promise<DispatchRecord> {
     await delay(300);
     const companyId = AuthService.requireCurrentCompanyId();
-    const list = this.getStoredDispatches();
+    const user = AuthService.getCurrentUser();
+    if (!user) throw new Error('Authentication required.');
 
-    // Auto Dispatch Number: DISP-YYYY-NNNN
-    const currentYear = new Date().getFullYear();
-    const sameYear = list.filter(o => o.companyId === companyId && o.dispatchNumber.startsWith(`DISP-${currentYear}-`));
-    
-    let nextSeq = 1;
-    if (sameYear.length > 0) {
-      const seqs = sameYear.map(o => {
-        const parts = o.dispatchNumber.split('-');
-        return parseInt(parts[parts.length - 1], 10);
-      });
-      nextSeq = Math.max(...seqs) + 1;
+    // 1. Role Guard: Only COMPANY_ADMIN or authorized users
+    if (!['COMPANY_ADMIN', 'SUPER_ADMIN', 'SALES_EXECUTIVE'].includes(user.role)) {
+      throw new Error('Unauthorized: Only COMPANY_ADMIN, SUPER_ADMIN or authorized Sales Executives can prepare dispatch records.');
     }
+
+    // 2. Validate Items
+    const { JobCardApiService } = await import('./jobCardApi');
+    const jobCards = await JobCardApiService.getJobCards();
     
-    const dispatchNumber = `DISP-${currentYear}-${String(nextSeq).padStart(4, '0')}`;
-    const id = `disp-${Date.now()}`;
+    for (const item of dispatch.items) {
+      const card = jobCards.find(c => c.id === item.jobCardId);
+      if (!card) throw new Error(`Job Card '${item.jobCardNumber}' not found.`);
+      if (card.companyId !== companyId) throw new Error(`Access Denied for Job Card '${item.jobCardNumber}'.`);
+      
+      const jobItem = card.items.find(i => i.jobItemId === item.jobItemId);
+      if (!jobItem) throw new Error(`Item not found in Job Card '${item.jobCardNumber}'.`);
+
+      // Eligibility Check
+      if (jobItem.status !== 'Ready for Dispatch') {
+        throw new Error(`Job Item '${jobItem.productName}' is not Ready for Dispatch. Current Status: ${jobItem.status}`);
+      }
+
+      const inspections = await QCApiService.getInspectionsForJobItem(item.productionOrderId, item.jobItemId);
+      const approvedQty = inspections.reduce((sum, q) => sum + q.approvedQuantity, 0);
+      const rejectedQty = inspections.reduce((sum, q) => sum + q.rejectedQuantity, 0);
+      const reworkQty = inspections.reduce((sum, q) => sum + q.reworkQuantity, 0);
+
+      if (approvedQty <= 0) throw new Error(`Job Item '${jobItem.productName}' has 0 approved quantities in QC.`);
+      if (rejectedQty > 0) throw new Error(`Job Item '${jobItem.productName}' has rejected quantities in QC.`);
+      if (reworkQty > 0) throw new Error(`Job Item '${jobItem.productName}' has rework quantities in QC.`);
+
+      // Quantity Check
+      if (item.currentDispatchQuantity <= 0) throw new Error(`Dispatch quantity for '${jobItem.productName}' must be greater than 0.`);
+      if (item.currentDispatchQuantity > item.remainingQuantity) {
+        throw new Error(`Cannot over-dispatch '${jobItem.productName}'. Available: ${item.remainingQuantity}, Requested: ${item.currentDispatchQuantity}.`);
+      }
+    }
+
+    const list = this.getStoredDispatches();
+    const finYear = ProductionApiService.getFinancialYearString(dispatch.dispatchDate);
+    const prefix = `DSP/${finYear}/`;
+    
+    const tenantDispatches = list.filter(o => o.companyId === companyId && o.dispatchNumber.startsWith(prefix));
+    let maxSeq = 0;
+    tenantDispatches.forEach(o => {
+      const parts = o.dispatchNumber.split('/');
+      if (parts.length === 3) {
+        const seq = parseInt(parts[2], 10);
+        if (!isNaN(seq) && seq > maxSeq) {
+          maxSeq = seq;
+        }
+      }
+    });
+    
+    const nextSeq = maxSeq + 1;
+    const dispatchNumber = `${prefix}${String(nextSeq).padStart(4, '0')}`;
+    const id = `dsp-${Date.now()}`;
     const timestamp = new Date().toISOString();
-
-    const totalDispatchedQuantity = dispatch.previouslyDispatchedQuantity + dispatch.currentDispatchQuantity;
-    const pendingDispatchQuantity = dispatch.approvedQuantity - totalDispatchedQuantity;
-
-    // Status: Fully Dispatched when pending is 0, else Partially Dispatched
-    let status: DispatchStatus = pendingDispatchQuantity <= 0 ? 'Fully Dispatched' : 'Partially Dispatched';
 
     const newDispatch: DispatchRecord = {
       ...dispatch,
-      companyId,
       id,
+      companyId,
       dispatchNumber,
-      totalDispatchedQuantity,
-      pendingDispatchQuantity,
-      status,
+      status: 'Draft',
+      preparedBy: user.userName,
       createdAt: timestamp,
       updatedAt: timestamp
     };
@@ -99,137 +128,106 @@ export class DispatchApiService {
     list.push(newDispatch);
     this.saveDispatches(list);
 
-    // Sync PO & Job item status
-    await this.syncOrderStatus(dispatch.productionOrderId);
-
     return newDispatch;
   }
 
-  public static async updateDispatch(id: string, updatedFields: Partial<DispatchRecord>): Promise<DispatchRecord> {
+  public static async confirmDispatch(id: string): Promise<DispatchRecord> {
     await delay(300);
-    const list = this.getStoredDispatches();
-    const index = list.findIndex(item => item.id === id);
-
-    if (index === -1) throw new Error(`Dispatch with ID '${id}' not found.`);
-
-    const currentRecord = list[index];
-    AuthService.assertTenantAccess(currentRecord.companyId, AuthService.getCurrentUser());
-
-    const updated = {
-      ...currentRecord,
-      ...updatedFields,
-      id: currentRecord.id,
-      companyId: currentRecord.companyId, // Protect tenant identity
-      updatedAt: new Date().toISOString()
-    };
-
-    // Recalculate totals if quantities changed
-    if (
-      updatedFields.currentDispatchQuantity !== undefined ||
-      updatedFields.previouslyDispatchedQuantity !== undefined ||
-      updatedFields.approvedQuantity !== undefined
-    ) {
-      const approved = updated.approvedQuantity;
-      const prev = updated.previouslyDispatchedQuantity;
-      const curr = updated.currentDispatchQuantity;
-      updated.totalDispatchedQuantity = prev + curr;
-      updated.pendingDispatchQuantity = approved - updated.totalDispatchedQuantity;
-      updated.status = updated.pendingDispatchQuantity <= 0 ? 'Fully Dispatched' : 'Partially Dispatched';
+    const user = AuthService.getCurrentUser();
+    if (!user) throw new Error('Authentication required.');
+    if (!['COMPANY_ADMIN', 'SUPER_ADMIN'].includes(user.role)) {
+      throw new Error('Unauthorized: Only COMPANY_ADMIN or SUPER_ADMIN can confirm dispatches.');
     }
 
-    list[index] = updated;
-    this.saveDispatches(list);
-
-    // Sync PO & Job item status
-    await this.syncOrderStatus(updated.productionOrderId);
-
-    return updated;
-  }
-
-  public static async cancelDispatch(id: string): Promise<DispatchRecord> {
-    await delay(200);
     const list = this.getStoredDispatches();
-    const index = list.findIndex(item => item.id === id);
-
-    if (index === -1) throw new Error(`Dispatch with ID '${id}' not found.`);
-
-    const current = list[index];
-    AuthService.assertTenantAccess(current.companyId, AuthService.getCurrentUser());
-
-    current.status = 'Cancelled';
-    current.updatedAt = new Date().toISOString();
-
-    list[index] = current;
-    this.saveDispatches(list);
-
-    // Sync PO & Job item status
-    await this.syncOrderStatus(current.productionOrderId);
-
-    return current;
-  }
-
-  public static async syncOrderStatus(poId: string): Promise<void> {
-    const order = await ProductionApiService.getOrderById(poId);
-    if (!order) return;
-
-    // Fetch all dispatches for this PO
-    const allDispatches = this.getStoredDispatches().filter(d => d.productionOrderId === poId && d.status !== 'Cancelled');
+    const index = list.findIndex(d => d.id === id);
+    if (index === -1) throw new Error('Dispatch record not found.');
     
-    // Check for each item if it's fully dispatched
-    let someDispatched = false;
-    let allCompleted = true;
+    const record = list[index];
+    AuthService.assertTenantAccess(record.companyId, user);
 
-    for (const item of order.items) {
-      const qcs = await QCApiService.getInspectionsForJobItem(poId, item.id);
-      const approvedQty = qcs.reduce((sum, q) => sum + q.approvedQuantity, 0);
+    if (record.status !== 'Draft') {
+      throw new Error('Only Draft dispatches can be confirmed.');
+    }
 
-      const itemDispatches = allDispatches.filter(d => d.jobItemId === item.id);
-      const totalDispatched = itemDispatches.reduce((sum, d) => sum + d.currentDispatchQuantity, 0);
+    record.status = 'Confirmed';
+    record.confirmedAt = new Date().toISOString();
+    record.confirmedByUserId = user.userId;
+    record.confirmedByName = user.userName;
+    record.updatedAt = record.confirmedAt;
 
-      if (totalDispatched > 0) {
-        someDispatched = true;
-      }
+    list[index] = record;
+    this.saveDispatches(list);
 
-      const isFullyDispatched = approvedQty > 0 && totalDispatched >= approvedQty;
-
-      if (isFullyDispatched) {
-        if (item.status !== 'Completed') {
-          item.status = 'Completed';
-          const now = new Date();
-          item.timeline = [
-            ...(item.timeline || []),
-            {
-              id: `evt-disp-comp-${Date.now()}`,
-              date: now.toISOString().split('T')[0],
-              time: now.toTimeString().split(' ')[0],
-              user: 'System',
-              oldStatus: item.status || 'Ready for Dispatch',
-              newStatus: 'Completed',
-              remarks: 'Job fully dispatched.'
-            }
-          ];
-        }
-      } else {
-        allCompleted = false;
-        // If there is any dispatch but not fully, we can set the Job's status to 'Ready for Dispatch'
-        // so it remains searchable / clear.
-        if (totalDispatched > 0 && item.status !== 'Completed') {
-          // Ensure it's marked as ready/partially dispatched
-          item.status = 'Ready for Dispatch';
-        }
+    // Sync Job Card Statuses
+    const { JobCardApiService } = await import('./jobCardApi');
+    for (const item of record.items) {
+      const card = await JobCardApiService.getJobCardById(item.jobCardId);
+      if (card) {
+        await JobCardApiService.syncJobCardItems(card);
       }
     }
 
-    let newPOStatus = order.status;
-    if (allCompleted && order.items.length > 0) {
-      newPOStatus = 'Completed';
-    } else if (someDispatched) {
-      newPOStatus = 'Partially Dispatched';
+    return record;
+  }
+
+  public static async cancelDispatch(id: string, reason: string): Promise<DispatchRecord> {
+    await delay(300);
+    const user = AuthService.getCurrentUser();
+    if (!user) throw new Error('Authentication required.');
+    if (!['COMPANY_ADMIN', 'SUPER_ADMIN'].includes(user.role)) {
+      throw new Error('Unauthorized: Only COMPANY_ADMIN or SUPER_ADMIN can cancel dispatches.');
     }
 
-    await ProductionApiService.updateOrder(poId, {
-      items: order.items,
-      status: newPOStatus
-    });
+    const list = this.getStoredDispatches();
+    const index = list.findIndex(d => d.id === id);
+    if (index === -1) throw new Error('Dispatch record not found.');
+    
+    const record = list[index];
+    AuthService.assertTenantAccess(record.companyId, user);
+
+    if (record.status === 'Delivered') {
+      throw new Error('Cannot cancel a delivered dispatch.');
+    }
+
+    record.status = 'Cancelled';
+    record.remarks = `${record.remarks}\n[CANCELLED: ${reason}]`;
+    record.updatedAt = new Date().toISOString();
+
+    list[index] = record;
+    this.saveDispatches(list);
+
+    // Sync Job Card Statuses to restore quantity
+    const { JobCardApiService } = await import('./jobCardApi');
+    for (const item of record.items) {
+      const card = await JobCardApiService.getJobCardById(item.jobCardId);
+      if (card) {
+        await JobCardApiService.syncJobCardItems(card);
+      }
+    }
+
+    return record;
+  }
+
+  public static async getDispatchSummary(jobCardId: string, jobItemId: string): Promise<{ totalDispatched: number; history: DispatchRecord[] }> {
+    const all = this.getStoredDispatches();
+    const companyId = AuthService.requireCurrentCompanyId();
+    
+    const filtered = all.filter(d => 
+      d.companyId === companyId && 
+      d.status !== 'Cancelled' &&
+      d.status !== 'Draft' && // Only confirmed/in-transit/delivered count
+      d.items.some(i => i.jobCardId === jobCardId && i.jobItemId === jobItemId)
+    );
+
+    const total = filtered.reduce((sum, d) => {
+      const item = d.items.find(i => i.jobCardId === jobCardId && i.jobItemId === jobItemId);
+      return sum + (item?.currentDispatchQuantity || 0);
+    }, 0);
+
+    return {
+      totalDispatched: total,
+      history: filtered
+    };
   }
 }

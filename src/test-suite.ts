@@ -24,6 +24,8 @@ import { QuotationApiService } from './features/quotation/services/api';
 import { PIApiService } from './features/proforma-invoice/services/api';
 import { ProductionApiService } from './features/production/services/api';
 import { JobCardApiService } from './features/production/services/jobCardApi';
+import { DispatchApiService } from './features/production/services/dispatchApi';
+import { DeliveryChallanApiService } from './features/production/services/deliveryChallanApi';
 
 async function runTests() {
   console.log('=== STARTING PRINTOPIA AUTH & INTEGRITY TEST SUITE ===\n');
@@ -968,6 +970,95 @@ async function runTests() {
   });
   assert(updatedJc.companyId === 'company-1', 'Verify: Job Card update ignores caller-supplied companyId override.');
   assert(updatedJc.priority === 'Urgent', 'Verify: Job Card non-security fields are updated correctly.');
+
+  // ==========================================
+  // MODULE-10: DISPATCH & DELIVERY CHALLAN TESTS
+  // ==========================================
+  
+  // 1. Create Dispatch Record (Multi-Item)
+  try {
+    const dispatch = await DispatchApiService.createDispatch({
+      dispatchDate: new Date().toISOString().split('T')[0],
+      customerId: jc.customerId || 'CUST-1',
+      customerName: jc.customerName,
+      customerCode: jc.customerCode,
+      billingAddressSnapshot: '123 Billing St',
+      deliveryAddressSnapshot: '456 Delivery Rd',
+      contactPersonSnapshot: 'John Doe',
+      phoneSnapshot: '9876543210',
+      transportMode: 'Local Delivery',
+      remarks: 'Standard test dispatch',
+      items: jc.items.map(item => ({
+        id: `di-${Date.now()}`,
+        dispatchId: '',
+        jobCardId: jc.id,
+        jobCardNumber: jc.jobCardNumber,
+        productionOrderId: jc.poId,
+        productionOrderNumber: jc.poNumber,
+        productionOrderItemId: jc.productionOrderItemId,
+        jobItemId: item.jobItemId,
+        proformaInvoiceId: jc.proformaInvoiceId || '',
+        quotationId: jc.quotationId || '',
+        customerId: jc.customerId || '',
+        productId: item.productId,
+        productName: item.productName,
+        specification: item.specification,
+        orderedQuantity: item.quantity,
+        approvedQuantity: item.quantity,
+        packedQuantity: item.quantity,
+        previouslyDispatchedQuantity: 0,
+        currentDispatchQuantity: item.quantity,
+        remainingQuantity: item.quantity,
+        unit: 'Pcs',
+        packingType: 'Box',
+        qtyPerPack: 100,
+        numberOfPacks: item.quantity / 100
+      }))
+    });
+    assert(dispatch !== null && dispatch.status === 'Draft', 'Verify: Create Multi-item Dispatch Record in Draft status.');
+    
+    // 2. Confirm Dispatch
+    const confirmed = await DispatchApiService.confirmDispatch(dispatch.id);
+    assert(confirmed.status === 'Confirmed', 'Verify: Confirm Dispatch Record.');
+
+    // 3. Create Delivery Challan from Dispatches
+    const challan = await DeliveryChallanApiService.createChallan({
+      challanDate: new Date().toISOString().split('T')[0],
+      customerId: jc.customerId || 'CUST-1',
+      customerCode: jc.customerCode,
+      customerName: jc.customerName,
+      billingAddressSnapshot: '123 Billing St',
+      deliveryAddressSnapshot: '456 Delivery Rd',
+      contactPersonSnapshot: 'John Doe',
+      phoneSnapshot: '9876543210',
+      transportMode: 'Road',
+      remarks: 'Test Challan',
+      dispatchIds: [confirmed.id],
+      items: confirmed.items,
+      preparedBy: 'Admin'
+    });
+    assert(challan !== null && challan.status === 'Pending Dispatch', 'Verify: Create Delivery Challan from confirmed dispatches.');
+
+    // 4. Update Tracking
+    const inTransit = await DeliveryChallanApiService.updateTracking(challan.id, 'In Transit', 'Out of factory');
+    assert(inTransit.status === 'In Transit' && inTransit.trackingHistory.length > 0, 'Verify: Update Delivery Challan tracking to In Transit.');
+
+    // 5. Confirm Delivery (POD)
+    const delivered = await DeliveryChallanApiService.confirmDelivery(challan.id, {
+      receivedBy: 'Jane Doe',
+      notes: 'Delivered in good condition',
+      receivedAt: new Date().toISOString()
+    });
+    assert(delivered.status === 'Delivered' && delivered.pod !== undefined, 'Verify: Confirm Delivery (POD) marks Challan as Delivered.');
+
+    // 6. Job Card Completion Sync
+    const finalJc = await JobCardApiService.getJobCardById(jc.id);
+    assert(finalJc?.status === 'Completed', 'Verify: Job Card is automatically marked as Completed after full delivery.');
+
+  } catch (e: any) {
+    assert(false, `Module-10 test failed: ${e.message}`);
+    console.error(e);
+  }
 
   console.log('\n=== PRINTOPIA AUTH & INTEGRITY TEST RESULTS ===');
   console.log(`Passed: ${passedCount}`);

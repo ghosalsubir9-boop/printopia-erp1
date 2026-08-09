@@ -141,6 +141,14 @@ export class AuthService {
     return companyId;
   }
 
+  public static requireCurrentUser(): UserSession {
+    const user = this.getCurrentUser();
+    if (!user) {
+      throw new Error('Authentication required.');
+    }
+    return user;
+  }
+
   public static setSupportTenant(tenantId: string | null): void {
     const session = this.getCurrentUser();
     if (!session || session.role !== 'SUPER_ADMIN') {

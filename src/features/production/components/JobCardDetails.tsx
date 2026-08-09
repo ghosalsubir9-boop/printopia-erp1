@@ -73,12 +73,21 @@ const statusColors: Record<JobCardStatus, "default" | "primary" | "secondary" | 
   'Plate Issued': 'warning',
   'Machine Queue': 'primary',
   'Printing': 'primary',
+  'Cutting Pending': 'warning',
+  'Cutting In Progress': 'primary',
+  'Cutting Completed': 'success',
+  'Finishing Pending': 'warning',
+  'Finishing In Progress': 'primary',
+  'Finishing Completed': 'success',
+  'QC Pending': 'warning',
   'QC': 'info',
   'Rework': 'error',
+  'Packing': 'warning',
   'Ready for Dispatch': 'success',
   'Partially Dispatched': 'success',
   'Dispatched': 'success',
   'Delivered': 'success',
+  'Completed': 'success',
   'Cancelled': 'error'
 };
 

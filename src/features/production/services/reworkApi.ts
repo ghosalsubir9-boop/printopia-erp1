@@ -60,6 +60,12 @@ export class ReworkApiService {
     await delay(300);
     const companyId = AuthService.requireCurrentCompanyId();
     const currentUser = AuthService.getCurrentUser();
+
+    // Role Guard
+    if (!currentUser || !['COMPANY_ADMIN', 'SUPER_ADMIN'].includes(currentUser.role)) {
+      throw new Error('Unauthorized: Only COMPANY_ADMIN or SUPER_ADMIN can create and assign rework tasks.');
+    }
+
     const list = this.getStoredTasks();
 
     // Auto Rework Task Number: RWK-YYYY-NNNN
@@ -109,6 +115,13 @@ export class ReworkApiService {
 
   public static async updateReworkTask(id: string, updatedFields: Partial<ReworkTask>): Promise<ReworkTask> {
     await delay(300);
+    const currentUser = AuthService.getCurrentUser();
+
+    // Role Guard
+    if (!currentUser || !['COMPANY_ADMIN', 'SUPER_ADMIN'].includes(currentUser.role)) {
+      throw new Error('Unauthorized: Only COMPANY_ADMIN or SUPER_ADMIN can update or complete rework tasks.');
+    }
+
     const list = this.getStoredTasks();
     const index = list.findIndex(item => item.id === id);
 

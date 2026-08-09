@@ -3,9 +3,10 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { DeliveryChallan, DeliveryConfirmation, DeliveryStatus } from '../types';
+import { DeliveryChallan, DeliveryTracking, DeliveryTrackingStatus, ProofOfDelivery } from '../types';
 import { DispatchApiService } from './dispatchApi';
 import { AuthService } from '../../../services/authService';
+import { ProductionApiService } from './api';
 
 const STORAGE_KEY = 'printopia_delivery_challans';
 
@@ -47,35 +48,56 @@ export class DeliveryChallanApiService {
   }
 
   public static async createChallan(
-    challan: Omit<DeliveryChallan, 'id' | 'companyId' | 'challanNumber' | 'createdAt' | 'updatedAt' | 'status'>
+    challan: Omit<DeliveryChallan, 'id' | 'companyId' | 'challanNumber' | 'createdAt' | 'updatedAt' | 'status' | 'trackingHistory'>
   ): Promise<DeliveryChallan> {
     await delay(300);
     const companyId = AuthService.requireCurrentCompanyId();
+    const user = AuthService.getCurrentUser();
+    if (!user) throw new Error('Authentication required.');
+
+    if (!['COMPANY_ADMIN', 'SUPER_ADMIN', 'SALES_EXECUTIVE'].includes(user.role)) {
+      throw new Error('Unauthorized: Only COMPANY_ADMIN, SUPER_ADMIN or Sales Executives can generate Delivery Challans.');
+    }
+
     const list = this.getStoredChallans();
 
-    // Auto Challan Number: CHAL-YYYY-NNNN
-    const currentYear = new Date().getFullYear();
-    const sameYear = list.filter(o => o.companyId === companyId && o.challanNumber.startsWith(`CHAL-${currentYear}-`));
+    const finYear = ProductionApiService.getFinancialYearString(challan.challanDate);
+    const prefix = `DC/${finYear}/`;
     
-    let nextSeq = 1;
-    if (sameYear.length > 0) {
-      const seqs = sameYear.map(o => {
-        const parts = o.challanNumber.split('-');
-        return parseInt(parts[parts.length - 1], 10);
-      });
-      nextSeq = Math.max(...seqs) + 1;
-    }
+    const tenantChallans = list.filter(o => o.companyId === companyId && o.challanNumber.startsWith(prefix));
+    let maxSeq = 0;
+    tenantChallans.forEach(o => {
+      const parts = o.challanNumber.split('/');
+      if (parts.length === 3) {
+        const seq = parseInt(parts[2], 10);
+        if (!isNaN(seq) && seq > maxSeq) {
+          maxSeq = seq;
+        }
+      }
+    });
     
-    const challanNumber = `CHAL-${currentYear}-${String(nextSeq).padStart(4, '0')}`;
+    const nextSeq = maxSeq + 1;
+    const challanNumber = `${prefix}${String(nextSeq).padStart(4, '0')}`;
     const id = `chal-${Date.now()}`;
     const timestamp = new Date().toISOString();
+
+    const status: DeliveryTrackingStatus = 'Pending Dispatch';
+    const trackingHistory: DeliveryTracking[] = [
+      {
+        status,
+        dateTime: timestamp,
+        updatedBy: user.userName,
+        remarks: 'Delivery Challan generated.'
+      }
+    ];
 
     const newChallan: DeliveryChallan = {
       ...challan,
       companyId,
       id,
       challanNumber,
-      status: 'Pending',
+      status,
+      trackingHistory,
       createdAt: timestamp,
       updatedAt: timestamp
     };
@@ -83,73 +105,118 @@ export class DeliveryChallanApiService {
     list.push(newChallan);
     this.saveChallans(list);
 
+    // Update Dispatches
+    const dispatches = (DispatchApiService as any).getStoredDispatches();
+    for (const dispatchId of challan.dispatchIds) {
+      const dIdx = dispatches.findIndex((d: any) => d.id === dispatchId);
+      if (dIdx !== -1) {
+        dispatches[dIdx].deliveryChallanId = id;
+        dispatches[dIdx].deliveryChallanNumber = challanNumber;
+        dispatches[dIdx].status = 'Confirmed';
+      }
+    }
+    (DispatchApiService as any).saveDispatches(dispatches);
+
     return newChallan;
   }
 
-  public static async updateChallan(id: string, updatedFields: Partial<DeliveryChallan>): Promise<DeliveryChallan> {
+  public static async updateTracking(id: string, nextStatus: DeliveryTrackingStatus, remarks: string): Promise<DeliveryChallan> {
     await delay(300);
-    const list = this.getStoredChallans();
-    const index = list.findIndex(item => item.id === id);
-
-    if (index === -1) throw new Error(`Delivery Challan with ID '${id}' not found.`);
-
-    const existing = list[index];
-    AuthService.assertTenantAccess(existing.companyId, AuthService.getCurrentUser());
-
-    const updated = {
-      ...existing,
-      ...updatedFields,
-      id: existing.id,
-      companyId: existing.companyId, // Protect tenant identity
-      updatedAt: new Date().toISOString()
-    };
-
-    list[index] = updated;
-    this.saveChallans(list);
-    return updated;
-  }
-
-  public static async addDeliveryConfirmation(id: string, confirmation: DeliveryConfirmation): Promise<DeliveryChallan> {
-    await delay(300);
-    const list = this.getStoredChallans();
-    const index = list.findIndex(item => item.id === id);
-
-    if (index === -1) throw new Error(`Delivery Challan with ID '${id}' not found.`);
-
-    const currentChallan = list[index];
-    AuthService.assertTenantAccess(currentChallan.companyId, AuthService.getCurrentUser());
-
-    // Business Rule check: Delivered Quantity cannot exceed Dispatched Quantity
-    if (confirmation.deliveredQuantity !== undefined && confirmation.deliveredQuantity > currentChallan.dispatchQuantity) {
-      throw new Error(`Delivered quantity (${confirmation.deliveredQuantity}) cannot exceed dispatched quantity (${currentChallan.dispatchQuantity}).`);
+    const user = AuthService.getCurrentUser();
+    if (!user) throw new Error('Authentication required.');
+    if (!['COMPANY_ADMIN', 'SUPER_ADMIN'].includes(user.role)) {
+      throw new Error('Unauthorized.');
     }
 
-    const updated = {
-      ...currentChallan,
-      status: confirmation.status,
-      deliveryConfirmation: confirmation,
-      updatedAt: new Date().toISOString()
-    };
+    const list = this.getStoredChallans();
+    const index = list.findIndex(item => item.id === id);
+    if (index === -1) throw new Error('Challan not found.');
 
-    list[index] = updated;
+    const challan = list[index];
+    AuthService.assertTenantAccess(challan.companyId, user);
+
+    const timestamp = new Date().toISOString();
+    challan.status = nextStatus;
+    challan.trackingHistory.push({
+      status: nextStatus,
+      dateTime: timestamp,
+      updatedBy: user.userName,
+      remarks
+    });
+    challan.updatedAt = timestamp;
+
+    list[index] = challan;
     this.saveChallans(list);
 
-    // Cascade: If delivered or partially delivered, update status of dispatches associated with this challan
-    if (confirmation.status === 'Delivered' || confirmation.status === 'Partially Delivered') {
-      for (const dispatchId of currentChallan.dispatchRecordIds) {
-        try {
-          const disp = await DispatchApiService.getDispatchById(dispatchId);
-          if (disp) {
-            await DispatchApiService.updateDispatch(dispatchId, {
-              status: confirmation.status === 'Delivered' ? 'Delivered' : 'Partially Dispatched'
-            });
+    if (nextStatus === 'Delivered') {
+      const dispatches = (DispatchApiService as any).getStoredDispatches();
+      const { JobCardApiService } = await import('./jobCardApi');
+      
+      for (const dId of challan.dispatchIds) {
+        const dIdx = dispatches.findIndex((d: any) => d.id === dId);
+        if (dIdx !== -1) {
+          dispatches[dIdx].status = 'Delivered';
+          for (const item of dispatches[dIdx].items) {
+             const card = await JobCardApiService.getJobCardById(item.jobCardId);
+             if (card) {
+               await JobCardApiService.syncJobCardItems(card);
+             }
           }
-        } catch (e) {
-          console.error(`Failed to update dispatch status for dispatchId ${dispatchId}:`, e);
+        }
+      }
+      (DispatchApiService as any).saveDispatches(dispatches);
+    }
+
+    return challan;
+  }
+
+  public static async confirmDelivery(id: string, pod: ProofOfDelivery): Promise<DeliveryChallan> {
+    await delay(300);
+    const user = AuthService.getCurrentUser();
+    if (!user) throw new Error('Authentication required.');
+    if (!['COMPANY_ADMIN', 'SUPER_ADMIN'].includes(user.role)) {
+      throw new Error('Unauthorized.');
+    }
+
+    const list = this.getStoredChallans();
+    const index = list.findIndex(item => item.id === id);
+    if (index === -1) throw new Error('Challan not found.');
+
+    const challan = list[index];
+    AuthService.assertTenantAccess(challan.companyId, user);
+
+    const timestamp = new Date().toISOString();
+    challan.status = 'Delivered';
+    challan.receivedBy = pod.receivedBy;
+    challan.pod = pod;
+    challan.trackingHistory.push({
+      status: 'Delivered',
+      dateTime: timestamp,
+      updatedBy: user.userName,
+      remarks: `Delivery confirmed. Received by: ${pod.receivedBy}`
+    });
+    challan.updatedAt = timestamp;
+
+    list[index] = challan;
+    this.saveChallans(list);
+
+    const dispatches = (DispatchApiService as any).getStoredDispatches();
+    const { JobCardApiService } = await import('./jobCardApi');
+    
+    for (const dId of challan.dispatchIds) {
+      const dIdx = dispatches.findIndex((d: any) => d.id === dId);
+      if (dIdx !== -1) {
+        dispatches[dIdx].status = 'Delivered';
+        for (const item of dispatches[dIdx].items) {
+           const card = await JobCardApiService.getJobCardById(item.jobCardId);
+           if (card) {
+             await JobCardApiService.syncJobCardItems(card);
+           }
         }
       }
     }
+    (DispatchApiService as any).saveDispatches(dispatches);
 
-    return updated;
+    return challan;
   }
 }

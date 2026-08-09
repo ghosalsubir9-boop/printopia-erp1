@@ -13,9 +13,16 @@ import {
   Typography,
   Divider,
   Chip,
+  TableContainer,
+  Table,
+  TableHead,
+  TableRow,
+  TableCell,
+  TableBody,
+  Paper,
 } from '@mui/material';
 import { ArrowLeft as BackIcon } from 'lucide-react';
-import { DispatchRecord } from '../types';
+import { DispatchRecord, DispatchStatus } from '../types';
 
 interface DispatchDetailsProps {
   record: DispatchRecord;
@@ -23,6 +30,23 @@ interface DispatchDetailsProps {
 }
 
 export default function DispatchDetails({ record, onBack }: DispatchDetailsProps) {
+  const getStatusColor = (status: DispatchStatus) => {
+    switch (status) {
+      case 'Delivered':
+        return 'success';
+      case 'Confirmed':
+        return 'primary';
+      case 'In Transit':
+        return 'info';
+      case 'Draft':
+        return 'secondary';
+      case 'Cancelled':
+        return 'error';
+      default:
+        return 'warning';
+    }
+  };
+
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
       <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
@@ -34,13 +58,7 @@ export default function DispatchDetails({ record, onBack }: DispatchDetailsProps
         </Typography>
         <Chip
           label={record.status}
-          color={
-            record.status === 'Fully Dispatched' || record.status === 'Delivered'
-              ? 'success'
-              : record.status === 'Partially Dispatched'
-              ? 'info'
-              : 'warning'
-          }
+          color={getStatusColor(record.status)}
           sx={{ fontWeight: 'bold' }}
         />
       </Box>
@@ -48,70 +66,59 @@ export default function DispatchDetails({ record, onBack }: DispatchDetailsProps
       <Card sx={{ borderRadius: 3, border: '1px solid', borderColor: 'divider' }}>
         <CardContent sx={{ p: 3 }}>
           <Grid container spacing={3}>
-            {/* Job & Customer Details */}
+            {/* Customer Details */}
             <Grid size={{ xs: 12 }}>
               <Typography variant="subtitle1" sx={{ fontWeight: 'bold', color: 'primary.main' }}>
-                Job & Customer Information
+                Customer Information
               </Typography>
               <Divider sx={{ my: 1 }} />
             </Grid>
 
-            <Grid size={{ xs: 12, sm: 6, md: 4 }}>
+            <Grid size={{ xs: 12, sm: 6 }}>
               <Typography variant="caption" color="text.secondary">Customer Name</Typography>
               <Typography variant="body1" sx={{ fontWeight: 'medium' }}>{record.customerName}</Typography>
             </Grid>
 
-            <Grid size={{ xs: 12, sm: 6, md: 4 }}>
-              <Typography variant="caption" color="text.secondary">Production Order</Typography>
-              <Typography variant="body1" sx={{ fontWeight: 'medium' }}>{record.productionOrderNumber}</Typography>
+            <Grid size={{ xs: 12, sm: 6 }}>
+              <Typography variant="caption" color="text.secondary">Dispatch Date</Typography>
+              <Typography variant="body1">{record.dispatchDate}</Typography>
             </Grid>
 
-            <Grid size={{ xs: 12, sm: 6, md: 4 }}>
-              <Typography variant="caption" color="text.secondary">Job Item</Typography>
-              <Typography variant="body1" sx={{ fontWeight: 'medium' }}>{record.jobItemNumber}</Typography>
-            </Grid>
-
-            <Grid size={{ xs: 12 }}>
-              <Typography variant="caption" color="text.secondary">Product Name</Typography>
-              <Typography variant="body1" sx={{ fontWeight: 'bold' }}>{record.productName}</Typography>
-              {record.fileAccessories && record.fileAccessories !== 'None' && (
-                <Box sx={{ mt: 1 }}>
-                  <Typography variant="caption" color="text.secondary">File Accessories</Typography>
-                  <Typography variant="body1" sx={{ fontWeight: 'bold', color: 'primary.main' }}>{record.fileAccessories}</Typography>
-                </Box>
-              )}
-            </Grid>
-
-            {/* Quantity Metrics */}
+            {/* Items Table */}
             <Grid size={{ xs: 12 }}>
               <Typography variant="subtitle1" sx={{ fontWeight: 'bold', color: 'primary.main', mt: 1 }}>
-                Quantity & Status Metrics
+                Dispatch Items
               </Typography>
               <Divider sx={{ my: 1 }} />
-            </Grid>
-
-            <Grid size={{ xs: 12, sm: 6, md: 3 }}>
-              <Typography variant="caption" color="text.secondary">QC Approved Quantity</Typography>
-              <Typography variant="body1" sx={{ fontWeight: 'bold' }}>{record.approvedQuantity.toLocaleString()}</Typography>
-            </Grid>
-
-            <Grid size={{ xs: 12, sm: 6, md: 3 }}>
-              <Typography variant="caption" color="text.secondary">Previously Dispatched</Typography>
-              <Typography variant="body1">{record.previouslyDispatchedQuantity.toLocaleString()}</Typography>
-            </Grid>
-
-            <Grid size={{ xs: 12, sm: 6, md: 3 }}>
-              <Typography variant="caption" color="text.secondary">Current Dispatch Quantity</Typography>
-              <Typography variant="body1" sx={{ fontWeight: 'bold', color: 'primary.main' }}>
-                {record.currentDispatchQuantity.toLocaleString()}
-              </Typography>
-            </Grid>
-
-            <Grid size={{ xs: 12, sm: 6, md: 3 }}>
-              <Typography variant="caption" color="text.secondary">Pending Dispatch Quantity</Typography>
-              <Typography variant="body1" sx={{ color: record.pendingDispatchQuantity > 0 ? 'warning.main' : 'text.secondary' }}>
-                {record.pendingDispatchQuantity.toLocaleString()}
-              </Typography>
+              
+              <TableContainer component={Paper} variant="outlined" sx={{ mb: 2 }}>
+                <Table size="small">
+                  <TableHead sx={{ bgcolor: 'grey.50' }}>
+                    <TableRow>
+                      <TableCell sx={{ fontWeight: 'bold' }}>Job Card #</TableCell>
+                      <TableCell sx={{ fontWeight: 'bold' }}>Product</TableCell>
+                      <TableCell sx={{ fontWeight: 'bold' }}>PO #</TableCell>
+                      <TableCell sx={{ fontWeight: 'bold' }} align="right">Approved</TableCell>
+                      <TableCell sx={{ fontWeight: 'bold' }} align="right">Prev. Disp.</TableCell>
+                      <TableCell sx={{ fontWeight: 'bold', bgcolor: 'primary.50' }} align="right">Dispatch Qty</TableCell>
+                    </TableRow>
+                  </TableHead>
+                  <TableBody>
+                    {record.items.map((item) => (
+                      <TableRow key={item.jobCardId}>
+                        <TableCell sx={{ fontWeight: 'bold' }}>{item.jobCardNumber}</TableCell>
+                        <TableCell>{item.productName}</TableCell>
+                        <TableCell>{item.productionOrderNumber}</TableCell>
+                        <TableCell align="right">{item.approvedQuantity.toLocaleString()}</TableCell>
+                        <TableCell align="right">{item.previouslyDispatchedQuantity.toLocaleString()}</TableCell>
+                        <TableCell align="right" sx={{ fontWeight: 'bold', color: 'primary.main', bgcolor: 'primary.50' }}>
+                          {item.currentDispatchQuantity.toLocaleString()}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </TableContainer>
             </Grid>
 
             {/* Logistics & Transporter Details */}

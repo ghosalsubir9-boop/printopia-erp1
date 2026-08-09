@@ -122,6 +122,11 @@ export interface JobItem {
   printingStatus?: 'Pending' | 'Started' | 'Completed';
   finishingStatus?: 'Pending' | 'Started' | 'Completed';
   qcStatus?: 'Pending' | 'Passed' | 'Failed';
+
+  // Production Execution Outcomes
+  goodSheets?: number;
+  wasteSheets?: number;
+  actualSheets?: number;
 }
 
 export interface ProductionOrder {
@@ -290,88 +295,179 @@ export interface ReworkTask {
 
 export type DispatchStatus =
   | 'Draft'
-  | 'Ready'
-  | 'Partially Dispatched'
-  | 'Fully Dispatched'
+  | 'Confirmed'
+  | 'In Transit'
   | 'Delivered'
   | 'Cancelled';
+
+export type DeliveryTrackingStatus =
+  | 'Pending Dispatch'
+  | 'Dispatched'
+  | 'In Transit'
+  | 'Out for Delivery'
+  | 'Delivered'
+  | 'Partially Delivered'
+  | 'Delivery Failed'
+  | 'Returned'
+  | 'Cancelled';
+
+export interface DispatchItem {
+  id: string;
+  dispatchId: string;
+  jobCardId: string;
+  jobCardNumber: string;
+  productionOrderId: string;
+  productionOrderNumber: string;
+  productionOrderItemId: string;
+  jobItemId: string; // Add this for consistency
+  proformaInvoiceId: string;
+  quotationId: string;
+  customerId: string;
+  productId: string;
+  productName: string;
+  specification: string;
+  
+  orderedQuantity: number;
+  approvedQuantity: number;
+  packedQuantity: number;
+  previouslyDispatchedQuantity: number;
+  currentDispatchQuantity: number;
+  dispatchQuantity?: number; // Added for backward compatibility
+  remainingQuantity: number;
+  
+  unit: string;
+  packingType: string;
+  qtyPerPack: number;
+  numberOfPacks: number;
+  remarks?: string;
+  poNumber?: string; // Added for backward compatibility
+}
 
 export interface DispatchRecord {
   id: string;
   companyId: string;
-  dispatchNumber: string;
+  dispatchNumber: string; // DSP/2026-27/0001
   dispatchDate: string;
-  productionOrderId: string;
-  productionOrderNumber: string;
-  jobItemId: string;
-  jobItemNumber: string; // E.g., "Job-01"
   customerId: string;
   customerName: string;
-  productName: string;
-  fileAccessories?: FileAccessoriesType;
-  approvedQuantity: number;
-  previouslyDispatchedQuantity: number;
-  currentDispatchQuantity: number;
-  totalDispatchedQuantity: number;
-  pendingDispatchQuantity: number;
-  dispatchType: string;
-  transportMode: string;
-  vehicleNumber: string;
-  driverName: string;
-  driverMobile: string;
-  transporterName: string;
-  lrNumber: string;
-  numberOfPackages: number;
-  packageType: string;
-  packageWeight: string;
-  deliveryAddress: string;
-  contactPerson: string;
+  customerCode: string;
+  
+  // Snapshots for DC
+  billingAddressSnapshot: string;
+  deliveryAddressSnapshot: string;
+  contactPersonSnapshot: string;
+  phoneSnapshot: string;
+  
+  items: DispatchItem[];
+  
+  transportMode: 'Own Vehicle' | 'Customer Pickup' | 'Courier' | 'Transporter' | 'Local Delivery' | 'Other' | 'Road' | 'Rail' | 'Air' | 'Sea' | 'Hand/Self';
+  vehicleNumber?: string;
+  driverName?: string;
+  driverMobile?: string;
+  transporterName?: string;
+  lrNumber?: string;
+  trackingNumber?: string;
+  courierName?: string;
+  receivedBy?: string;
+  expectedDeliveryDate?: string;
+  
+  dispatchType?: string;
+  numberOfPackages?: number;
+  packageType?: string;
+  packageWeight?: string;
+  deliveryAddress?: string;
+  contactPerson?: string;
+
   remarks: string;
   status: DispatchStatus;
+  
+  preparedBy: string;
+  confirmedAt?: string;
+  confirmedByUserId?: string;
+  confirmedByName?: string;
+  
+  deliveryChallanId?: string;
+  deliveryChallanNumber?: string;
+  
   createdAt: string;
   updatedAt: string;
+
+  // Added for backward compatibility in billing module
+  currentDispatchQuantity?: number;
+  productName?: string;
+  productionOrderId?: string;
+  productionOrderNumber?: string;
+  jobItemId?: string;
 }
 
-export type DeliveryStatus =
-  | 'Pending'
-  | 'Delivered'
-  | 'Partially Delivered'
-  | 'Failed'
-  | 'Returned';
+export interface DeliveryTracking {
+  status: DeliveryTrackingStatus;
+  dateTime: string;
+  updatedBy: string;
+  remarks: string;
+}
 
-export interface DeliveryConfirmation {
-  deliveredDate?: string;
-  receiverName?: string;
-  receiverMobile?: string;
-  deliveredQuantity?: number;
-  proofOfDeliveryRef?: string;
-  deliveryRemarks?: string;
-  status: DeliveryStatus;
+export interface ProofOfDelivery {
+  receivedBy: string;
+  deliveryDate?: string; // Made optional for backward compatibility/tests
+  deliveryDateTime?: string; // Added for backward compatibility
+  receivedAt?: string; // Add this for compatibility with test
+  receiverPhone?: string;
+  notes?: string;
+  remarks?: string; // Added for backward compatibility
+  attachmentRef?: string;
+  signature?: string; // Add this
 }
 
 export interface DeliveryChallan {
   id: string;
   companyId: string;
-  challanNumber: string;
+  challanNumber: string; // DC/2026-27/0001
   challanDate: string;
+  
   customerId: string;
+  customerCode: string;
   customerName: string;
-  billingAddress: string;
-  deliveryAddress: string;
-  gstin: string;
-  contactPerson: string;
-  productionOrderReference: string; // PO number references (e.g. PO-2026-0001)
-  piReference: string; // Proforma Invoice number references
-  productSpecification: string; // Product specs/details
-  dispatchQuantity: number;
-  numberOfPackages: number;
+  billingAddressSnapshot: string;
+  deliveryAddressSnapshot: string;
+  contactPersonSnapshot: string;
+  phoneSnapshot: string;
+
+  // Added for backward compatibility
+  billingAddress?: string;
+  deliveryAddress?: string;
+  gstin?: string;
+  contactPerson?: string;
+  productionOrderReference?: string;
+  piReference?: string;
+  productSpecification?: string;
+  dispatchQuantity?: number;
+  numberOfPackages?: number;
+  dispatchRecordIds?: string[];
+  
+  customerPoNumber?: string;
+  
+  items: DispatchItem[];
+  
   transportMode: string;
-  vehicleNumber: string;
-  lrNumber: string;
+  vehicleNumber?: string;
+  driverName?: string;
+  driverMobile?: string;
+  transporterName?: string;
+  lrNumber?: string;
+  expectedDeliveryDate?: string;
+  
   remarks: string;
-  dispatchRecordIds: string[]; // List of dispatches included in this Challan
-  status: DeliveryStatus;
-  deliveryConfirmation?: DeliveryConfirmation;
+  preparedBy: string;
+  dispatchedBy?: string;
+  receivedBy?: string;
+  
+  status: DeliveryTrackingStatus;
+  trackingHistory: DeliveryTracking[];
+  pod?: ProofOfDelivery;
+  
+  dispatchIds: string[];
+  
   createdAt: string;
   updatedAt: string;
 }
@@ -396,6 +492,7 @@ export type JobCardStatus =
   | 'QC Pending'
   | 'QC'
   | 'Rework'
+  | 'Packing'
   | 'Ready for Dispatch'
   | 'Partially Dispatched'
   | 'Dispatched'

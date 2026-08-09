@@ -44,15 +44,17 @@ export const JOB_CARD_STAGES: JobCardStatus[] = [
   'Printing',
   'QC',
   'Rework',
+  'Packing',
   'Ready for Dispatch',
   'Partially Dispatched',
   'Dispatched',
   'Delivered',
+  'Completed',
   'Cancelled'
 ];
 
 export function getNextAllowedStages(current: JobCardStatus): JobCardStatus[] {
-  if (current === 'Cancelled') return [];
+  if (current === 'Cancelled' || current === 'Completed') return [];
   
   switch (current) {
     case 'Created':
@@ -80,9 +82,11 @@ export function getNextAllowedStages(current: JobCardStatus): JobCardStatus[] {
     case 'Finishing Completed':
       return ['QC', 'Cancelled'];
     case 'QC':
-      return ['Rework', 'Ready for Dispatch', 'Cancelled'];
+      return ['Rework', 'Packing', 'Ready for Dispatch', 'Cancelled'];
     case 'Rework':
-      return ['Machine Queue', 'Printing', 'QC', 'Cancelled'];
+      return ['Machine Queue', 'Printing', 'Cutting Pending', 'Finishing Pending', 'QC', 'Cancelled'];
+    case 'Packing':
+      return ['Ready for Dispatch', 'Cancelled'];
     case 'Ready for Dispatch':
       return ['Partially Dispatched', 'Dispatched', 'Cancelled'];
     case 'Partially Dispatched':
@@ -90,7 +94,7 @@ export function getNextAllowedStages(current: JobCardStatus): JobCardStatus[] {
     case 'Dispatched':
       return ['Delivered', 'Cancelled'];
     case 'Delivered':
-      return []; // Terminal state
+      return ['Completed', 'Cancelled'];
     default:
       return [];
   }
@@ -108,16 +112,17 @@ export function deriveParentStatus(items: JobCardItem[]): JobCardStatus {
   const activeItems = items.filter(item => item.status !== 'Cancelled');
   if (activeItems.length === 0) return 'Cancelled';
 
-  const allDelivered = activeItems.every(item => item.status === 'Delivered');
-  if (allDelivered) return 'Delivered';
+  const allDelivered = activeItems.every(item => item.status === 'Delivered' || item.status === 'Completed');
+  if (allDelivered) return 'Completed';
 
-  const allDispatched = activeItems.every(item => item.status === 'Dispatched' || item.status === 'Delivered');
+  const allDispatched = activeItems.every(item => item.status === 'Dispatched' || item.status === 'Delivered' || item.status === 'Completed');
   if (allDispatched) return 'Dispatched';
 
   const anyDispatched = activeItems.some(item => 
     item.status === 'Dispatched' || 
     item.status === 'Partially Dispatched' || 
-    item.status === 'Delivered'
+    item.status === 'Delivered' ||
+    item.status === 'Completed'
   );
   if (anyDispatched) return 'Partially Dispatched';
 
@@ -141,10 +146,12 @@ export function deriveParentStatus(items: JobCardItem[]): JobCardStatus {
     'Printing',
     'QC',
     'Rework',
+    'Packing',
     'Ready for Dispatch',
     'Partially Dispatched',
     'Dispatched',
-    'Delivered'
+    'Delivered',
+    'Completed'
   ];
 
   let minIndex = stageOrder.length;
@@ -276,21 +283,34 @@ export class DevelopmentLocalJobCardRepository {
         }
       }
 
-      // 7. QC Inspections -> Rework or Ready for Dispatch
+      // 7. QC Inspections -> Rework, Packing or Ready for Dispatch
       const itemIns = inspections.find(ins => ins.poId === jobCard.poId && ins.jobItemId === item.jobItemId);
       if (itemIns) {
-        if (itemIns.qcStatus === 'Rework Required' || itemIns.qcStatus === 'Rejected') {
+        if (itemIns.qcStatus === 'Rework Required' || itemIns.qcStatus === 'Rejected' || itemIns.rejectedQuantity > 0 || itemIns.reworkQuantity > 0) {
           nextStatus = 'Rework';
-        } else if (itemIns.qcStatus === 'Approved' || itemIns.qcStatus === 'Partially Approved') {
+        } else if (itemIns.qcStatus === 'Approved') {
           if (nextStatus === 'QC' || nextStatus === 'Rework' || nextStatus === 'Printing') {
-            nextStatus = 'Ready for Dispatch';
+            const requiresPacking = (item.specification?.toLowerCase().includes('pack') || 
+                                    item.specialProcess?.toLowerCase().includes('pack') || 
+                                    item.specialNotes?.toLowerCase().includes('pack') || 
+                                    (item.finishingTasks && item.finishingTasks.some(t => t.taskName.toLowerCase().includes('pack')))) ?? false;
+            
+            nextStatus = requiresPacking ? 'Packing' : 'Ready for Dispatch';
           }
         }
       }
 
       // 8. Dispatch Sync
-      const itemDisps = dispatches.filter(d => d.productionOrderId === jobCard.poId && d.jobItemId === item.jobItemId && d.status !== 'Cancelled' && d.status !== 'Draft');
-      const totalDispatched = itemDisps.reduce((sum, d) => sum + d.currentDispatchQuantity, 0);
+      const itemDisps = dispatches.filter(d => 
+        d.status !== 'Cancelled' && 
+        d.status !== 'Draft' && 
+        d.items.some(di => di.jobCardId === jobCard.id && di.jobItemId === item.jobItemId)
+      );
+      const totalDispatched = itemDisps.reduce((sum, d) => {
+        const di = d.items.find(di => di.jobCardId === jobCard.id && di.jobItemId === item.jobItemId);
+        return sum + (di?.currentDispatchQuantity || 0);
+      }, 0);
+      
       const approvedQty = itemIns ? itemIns.approvedQuantity : item.quantity;
 
       if (totalDispatched > 0) {
@@ -302,8 +322,11 @@ export class DevelopmentLocalJobCardRepository {
       }
 
       // 9. Delivery Sync
-      const poChallans = challans.filter(c => c.productionOrderReference === jobCard.poNumber && c.status === 'Delivered');
-      if (poChallans.length > 0 && nextStatus === 'Dispatched') {
+      const itemChallans = challans.filter(c => 
+        c.status === 'Delivered' && 
+        c.items.some(ci => ci.jobCardId === jobCard.id && ci.jobItemId === item.jobItemId)
+      );
+      if (itemChallans.length > 0 && nextStatus === 'Dispatched') {
         nextStatus = 'Delivered';
       }
 
@@ -340,6 +363,10 @@ export class DevelopmentLocalJobCardRepository {
         status: derived,
         updatedAt: new Date().toISOString()
       };
+      
+      // Cascade PO status update
+      await ProductionApiService.syncPOStatus(jobCard.poId);
+
       return updatedCard;
     }
     return jobCard;
@@ -447,6 +474,13 @@ export class DevelopmentLocalJobCardRepository {
   public static async createJobCard(jobCardData: CreateJobCardRequest): Promise<JobCard> {
     await delay(400);
     const companyId = AuthService.requireCurrentCompanyId();
+    const currentUser = AuthService.getCurrentUser();
+
+    // 0. Role Guard
+    if (!currentUser || !['COMPANY_ADMIN', 'SUPER_ADMIN'].includes(currentUser.role)) {
+      throw new Error('Unauthorized: Only COMPANY_ADMIN or SUPER_ADMIN can create Job Cards.');
+    }
+
     const list = this.getStoredJobCards();
 
     // 1. Fetch Production Order and validate exists
@@ -497,7 +531,6 @@ export class DevelopmentLocalJobCardRepository {
     const id = `jc-${Date.now()}`;
     const timestamp = new Date().toISOString();
 
-    const currentUser = AuthService.getCurrentUser();
     const createdByUserId = currentUser?.userId || 'System';
     const createdByName = currentUser?.userName || 'System';
 
@@ -827,8 +860,20 @@ export class DevelopmentLocalJobCardRepository {
         if (!itemIns) {
           throw new Error(`Cannot transition to Ready for Dispatch. Quality Control Verification has not been completed for Job Item: '${item.productName}'.`);
         }
-        if (itemIns.qcStatus !== 'Approved' && itemIns.qcStatus !== 'Partially Approved' && itemIns.qcStatus !== 'Pass') {
-          throw new Error(`Cannot transition to Ready for Dispatch. Quality Control Verification has failed or is pending (Status: '${itemIns.qcStatus}') for Job Item: '${item.productName}'.`);
+        if (itemIns.qcStatus !== 'Approved' && itemIns.qcStatus !== 'Pass') {
+          throw new Error(`Cannot transition to Ready for Dispatch. Quality Control Verification has failed, is partially approved, or is pending (Status: '${itemIns.qcStatus}') for Job Item: '${item.productName}'.`);
+        }
+        if (itemIns.rejectedQuantity > 0 || itemIns.reworkQuantity > 0) {
+          throw new Error(`Cannot transition to Ready for Dispatch. Quality Control has rejected or rework quantities for Job Item: '${item.productName}'.`);
+        }
+
+        const requiresPacking = (item.specification?.toLowerCase().includes('pack') || 
+                                item.specialProcess?.toLowerCase().includes('pack') || 
+                                item.specialNotes?.toLowerCase().includes('pack') || 
+                                (item.finishingTasks && item.finishingTasks.some(t => t.taskName.toLowerCase().includes('pack')))) ?? false;
+        
+        if (requiresPacking && currentStatus !== 'Packing') {
+          throw new Error(`Cannot transition to Ready for Dispatch. Job Item: '${item.productName}' requires Packing which has not been completed.`);
         }
       }
     }
@@ -881,9 +926,10 @@ export class DevelopmentLocalJobCardRepository {
 
     const timestamp = new Date().toISOString();
     const currentUser = AuthService.getCurrentUser();
-    const auditUserString = currentUser 
-      ? `${currentUser.userName} (${currentUser.userId})` 
-      : (user || 'System');
+    if (!currentUser) {
+      throw new Error("Action rejected: No active operator session found. Please log in first.");
+    }
+    const auditUserString = `${currentUser.userName} (${currentUser.userId})`;
 
     const newHistory: JobCardStatusHistory = {
       id: `jch-${Date.now()}`,
@@ -1006,8 +1052,20 @@ export class DevelopmentLocalJobCardRepository {
       if (!itemIns) {
         throw new Error(`Cannot transition to Ready for Dispatch. Quality Control Verification has not been completed for Job Item: '${item.productName}'.`);
       }
-      if (itemIns.qcStatus !== 'Approved' && itemIns.qcStatus !== 'Partially Approved' && itemIns.qcStatus !== 'Pass') {
-        throw new Error(`Cannot transition to Ready for Dispatch. Quality Control Verification has failed or is pending (Status: '${itemIns.qcStatus}') for Job Item: '${item.productName}'.`);
+      if (itemIns.qcStatus !== 'Approved' && itemIns.qcStatus !== 'Pass') {
+        throw new Error(`Cannot transition to Ready for Dispatch. Quality Control Verification has failed, is partially approved, or is pending (Status: '${itemIns.qcStatus}') for Job Item: '${item.productName}'.`);
+      }
+      if (itemIns.rejectedQuantity > 0 || itemIns.reworkQuantity > 0) {
+        throw new Error(`Cannot transition to Ready for Dispatch. Quality Control has rejected or rework quantities for Job Item: '${item.productName}'.`);
+      }
+
+      const requiresPacking = (item.specification?.toLowerCase().includes('pack') || 
+                              item.specialProcess?.toLowerCase().includes('pack') || 
+                              item.specialNotes?.toLowerCase().includes('pack') || 
+                              (item.finishingTasks && item.finishingTasks.some(t => t.taskName.toLowerCase().includes('pack')))) ?? false;
+      
+      if (requiresPacking && currentStatus !== 'Packing') {
+        throw new Error(`Cannot transition to Ready for Dispatch. Job Item: '${item.productName}' requires Packing which has not been completed.`);
       }
     }
 
@@ -1028,9 +1086,10 @@ export class DevelopmentLocalJobCardRepository {
     
     const timestamp = new Date().toISOString();
     const currentUser = AuthService.getCurrentUser();
-    const auditUserString = currentUser 
-      ? `${currentUser.userName} (${currentUser.userId})` 
-      : (user || 'System');
+    if (!currentUser) {
+      throw new Error("Action rejected: No active operator session found. Please log in first.");
+    }
+    const auditUserString = `${currentUser.userName} (${currentUser.userId})`;
 
     const newHistory: JobCardStatusHistory = {
       id: `jch-${Date.now()}`,

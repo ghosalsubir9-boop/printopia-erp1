@@ -33,7 +33,7 @@ import {
   CheckCircle2 as CheckIcon,
   Truck as TruckIcon,
 } from 'lucide-react';
-import { DeliveryChallan, DeliveryConfirmation, DeliveryStatus } from '../types';
+import { DeliveryChallan, DeliveryTrackingStatus, ProofOfDelivery } from '../types';
 import { DeliveryChallanApiService } from '../services/deliveryChallanApi';
 
 interface DeliveryChallanDetailsProps {
@@ -46,63 +46,50 @@ export default function DeliveryChallanDetails({ challan: initialChallan, onBack
   const [challan, setChallan] = useState<DeliveryChallan>(initialChallan);
   const [isPrinting, setIsPrinting] = useState(false);
 
-  // Delivery Confirmation Dialog State
-  const [confirmOpen, setConfirmOpen] = useState(false);
-  const [confirmSaving, setConfirmSaving] = useState(false);
+  // Tracking Dialog
+  const [trackingOpen, setTrackingOpen] = useState(false);
+  const [nextStatus, setNextStatus] = useState<DeliveryTrackingStatus | ''>('');
+  const [trackingRemarks, setTrackingRemarks] = useState('');
+  const [updating, setUpdating] = useState(false);
 
-  // Confirmation Form Fields
-  const [deliveredDate, setDeliveredDate] = useState(new Date().toISOString().split('T')[0]);
-  const [receiverName, setReceiverName] = useState('');
-  const [receiverMobile, setReceiverMobile] = useState('');
-  const [deliveredQuantity, setDeliveredQuantity] = useState<number>(challan.dispatchQuantity);
-  const [proofOfDeliveryRef, setProofOfDeliveryRef] = useState('');
-  const [deliveryRemarks, setDeliveryRemarks] = useState('');
-  const [deliveryStatus, setDeliveryStatus] = useState<DeliveryStatus>('Delivered');
+  // POD Dialog
+  const [podOpen, setPodOpen] = useState(false);
+  const [receivedBy, setReceivedBy] = useState('');
+  const [podRemarks, setPodRemarks] = useState('');
 
-  const [dialogError, setDialogError] = useState('');
-
-  const handleOpenConfirm = () => {
-    setDeliveredDate(new Date().toISOString().split('T')[0]);
-    setReceiverName(challan.deliveryConfirmation?.receiverName || '');
-    setReceiverMobile(challan.deliveryConfirmation?.receiverMobile || '');
-    setDeliveredQuantity(challan.deliveryConfirmation?.deliveredQuantity || challan.dispatchQuantity);
-    setProofOfDeliveryRef(challan.deliveryConfirmation?.proofOfDeliveryRef || '');
-    setDeliveryRemarks(challan.deliveryConfirmation?.deliveryRemarks || '');
-    setDeliveryStatus(challan.deliveryConfirmation?.status || 'Delivered');
-    setDialogError('');
-    setConfirmOpen(true);
-  };
-
-  const handleSaveConfirm = async () => {
-    if (deliveredQuantity <= 0) {
-      setDialogError('Delivered quantity must be greater than zero.');
-      return;
-    }
-    if (deliveredQuantity > challan.dispatchQuantity) {
-      setDialogError(`Delivered quantity cannot exceed dispatched quantity of ${challan.dispatchQuantity.toLocaleString()}.`);
-      return;
-    }
-
-    setConfirmSaving(true);
-    setDialogError('');
+  const handleUpdateTracking = async () => {
+    if (!nextStatus) return;
+    setUpdating(true);
     try {
-      const updated = await DeliveryChallanApiService.addDeliveryConfirmation(challan.id, {
-        deliveredDate,
-        receiverName,
-        receiverMobile,
-        deliveredQuantity,
-        proofOfDeliveryRef,
-        deliveryRemarks,
-        status: deliveryStatus,
-      });
+      const updated = await DeliveryChallanApiService.updateTracking(challan.id, nextStatus as DeliveryTrackingStatus, trackingRemarks);
       setChallan(updated);
-      setConfirmOpen(false);
+      setTrackingOpen(false);
+      setNextStatus('');
+      setTrackingRemarks('');
       onSave?.();
     } catch (e) {
-      console.error('Failed to save delivery confirmation:', e);
-      setDialogError(e instanceof Error ? e.message : 'Failed to record confirmation.');
+      console.error('Update tracking failed:', e);
     } finally {
-      setConfirmSaving(false);
+      setUpdating(false);
+    }
+  };
+
+  const handleConfirmDelivery = async () => {
+    if (!receivedBy) return;
+    setUpdating(true);
+    try {
+      const updated = await DeliveryChallanApiService.confirmDelivery(challan.id, {
+        receivedBy,
+        remarks: podRemarks,
+        deliveryDateTime: new Date().toISOString()
+      });
+      setChallan(updated);
+      setPodOpen(false);
+      onSave?.();
+    } catch (e) {
+      console.error('Confirm delivery failed:', e);
+    } finally {
+      setUpdating(false);
     }
   };
 
@@ -114,19 +101,15 @@ export default function DeliveryChallanDetails({ challan: initialChallan, onBack
     }, 500);
   };
 
-  const getStatusColor = (status: DeliveryStatus) => {
+  const getStatusColor = (status: DeliveryTrackingStatus) => {
     switch (status) {
-      case 'Delivered':
-        return 'success';
-      case 'Partially Delivered':
-        return 'info';
-      case 'Pending':
-        return 'warning';
-      case 'Failed':
+      case 'Delivered': return 'success';
+      case 'In Transit':
+      case 'Out for Delivery': return 'info';
+      case 'Pending Dispatch': return 'warning';
       case 'Returned':
-        return 'error';
-      default:
-        return 'default';
+      case 'Cancelled': return 'error';
+      default: return 'default';
     }
   };
 
@@ -314,14 +297,26 @@ export default function DeliveryChallanDetails({ challan: initialChallan, onBack
           >
             Print Challan
           </Button>
-          <Button
-            variant="contained"
-            color="success"
-            startIcon={<CheckIcon size={16} />}
-            onClick={handleOpenConfirm}
-          >
-            Record Delivery
-          </Button>
+          {challan.status !== 'Delivered' && challan.status !== 'Cancelled' && (
+            <>
+              <Button
+                variant="outlined"
+                color="info"
+                startIcon={<TruckIcon size={16} />}
+                onClick={() => setTrackingOpen(true)}
+              >
+                Update Tracking
+              </Button>
+              <Button
+                variant="contained"
+                color="success"
+                startIcon={<CheckIcon size={16} />}
+                onClick={() => setPodOpen(true)}
+              >
+                Confirm Delivery
+              </Button>
+            </>
+          )}
         </Box>
       </Box>
 
@@ -397,87 +392,67 @@ export default function DeliveryChallanDetails({ challan: initialChallan, onBack
         {/* Sidebar Cards: Logistics & Confirmations */}
         <Grid size={{ xs: 12, md: 4 }}>
           <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-            {/* Logistics Card */}
+            {/* Tracking History Card */}
             <Card sx={{ borderRadius: 3, border: '1px solid', borderColor: 'divider' }}>
               <CardContent sx={{ p: 3 }}>
-                <Typography variant="subtitle1" sx={{ fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: 1 }}>
-                  <TruckIcon size={18} style={{ color: '#3b82f6' }} /> Logistics Details
+                <Typography variant="subtitle1" sx={{ fontWeight: 'bold' }}>
+                  Tracking History
                 </Typography>
                 <Divider sx={{ my: 1 }} />
 
-                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5, mt: 2 }}>
-                  <Box>
-                    <Typography variant="caption" color="text.secondary">Transport Mode</Typography>
-                    <Typography variant="body2" sx={{ fontWeight: 'medium' }}>{challan.transportMode || 'Road'}</Typography>
-                  </Box>
-                  <Box>
-                    <Typography variant="caption" color="text.secondary">Vehicle Number</Typography>
-                    <Typography variant="body2" sx={{ fontWeight: 'medium' }}>{challan.vehicleNumber || '—'}</Typography>
-                  </Box>
-                  <Box>
-                    <Typography variant="caption" color="text.secondary">LR Number / GR No.</Typography>
-                    <Typography variant="body2" sx={{ fontWeight: 'medium' }}>{challan.lrNumber || '—'}</Typography>
-                  </Box>
-                  <Box>
-                    <Typography variant="caption" color="text.secondary">Total Packages</Typography>
-                    <Typography variant="body2" sx={{ fontWeight: 'medium' }}>{challan.numberOfPackages} Package(s)</Typography>
-                  </Box>
-                  <Box>
-                    <Typography variant="caption" color="text.secondary">Total Dispatch Quantity</Typography>
-                    <Typography variant="body2" sx={{ fontWeight: 'bold', color: 'primary.main' }}>
-                      {challan.dispatchQuantity.toLocaleString()} Units
-                    </Typography>
-                  </Box>
+                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, mt: 2 }}>
+                  {challan.trackingHistory.map((event, idx) => (
+                    <Box key={idx} sx={{ position: 'relative', pl: 2, borderLeft: '2px solid', borderColor: 'grey.200' }}>
+                      <Box sx={{ 
+                        position: 'absolute', 
+                        left: -5, 
+                        top: 4, 
+                        width: 8, 
+                        height: 8, 
+                        borderRadius: '50%', 
+                        bgcolor: idx === challan.trackingHistory.length - 1 ? 'primary.main' : 'grey.400' 
+                      }} />
+                      <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
+                        {new Date(event.dateTime).toLocaleString()} — {event.updatedBy}
+                      </Typography>
+                      <Typography variant="body2" sx={{ fontWeight: 'bold' }}>{event.status}</Typography>
+                      <Typography variant="body2" color="text.secondary">{event.remarks}</Typography>
+                    </Box>
+                  ))}
                 </Box>
               </CardContent>
             </Card>
 
-            {/* Delivery Confirmation Log Card */}
+            {/* Proof of Delivery Card */}
             <Card sx={{ borderRadius: 3, border: '1px solid', borderColor: 'divider' }}>
               <CardContent sx={{ p: 3 }}>
                 <Typography variant="subtitle1" sx={{ fontWeight: 'bold' }}>
-                  Delivery Confirmation
+                  Proof of Delivery (POD)
                 </Typography>
                 <Divider sx={{ my: 1 }} />
 
-                {challan.deliveryConfirmation ? (
+                {challan.pod ? (
                   <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5, mt: 2 }}>
                     <Box>
-                      <Typography variant="caption" color="text.secondary">Delivered Date</Typography>
-                      <Typography variant="body2" sx={{ fontWeight: 'medium' }}>{challan.deliveryConfirmation.deliveredDate}</Typography>
+                      <Typography variant="caption" color="text.secondary">Received By</Typography>
+                      <Typography variant="body2" sx={{ fontWeight: 'bold' }}>{challan.pod.receivedBy}</Typography>
                     </Box>
                     <Box>
-                      <Typography variant="caption" color="text.secondary">Delivered Qty</Typography>
-                      <Typography variant="body2" sx={{ fontWeight: 'bold', color: 'success.main' }}>
-                        {challan.deliveryConfirmation.deliveredQuantity?.toLocaleString()} / {challan.dispatchQuantity.toLocaleString()} Units
-                      </Typography>
+                      <Typography variant="caption" color="text.secondary">Delivery Date</Typography>
+                      <Typography variant="body2">{new Date(challan.pod.deliveryDateTime).toLocaleString()}</Typography>
                     </Box>
-                    <Box>
-                      <Typography variant="caption" color="text.secondary">Receiver Name & Mobile</Typography>
-                      <Typography variant="body2">{challan.deliveryConfirmation.receiverName} ({challan.deliveryConfirmation.receiverMobile || 'No Mobile'})</Typography>
-                    </Box>
-                    <Box>
-                      <Typography variant="caption" color="text.secondary">Proof of Delivery Ref</Typography>
-                      <Typography variant="body2">{challan.deliveryConfirmation.proofOfDeliveryRef || '—'}</Typography>
-                    </Box>
-                    <Box>
-                      <Typography variant="caption" color="text.secondary">Remarks</Typography>
-                      <Typography variant="body2" sx={{ fontStyle: 'italic' }}>{challan.deliveryConfirmation.deliveryRemarks || 'No remarks recorded.'}</Typography>
-                    </Box>
+                    {challan.pod.remarks && (
+                      <Box>
+                        <Typography variant="caption" color="text.secondary">Notes</Typography>
+                        <Typography variant="body2" sx={{ fontStyle: 'italic' }}>{challan.pod.remarks}</Typography>
+                      </Box>
+                    )}
                   </Box>
                 ) : (
                   <Box sx={{ py: 3, textAlign: 'center' }}>
-                    <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-                      No delivery confirmation has been recorded yet.
+                    <Typography variant="body2" color="text.secondary">
+                      POD not recorded yet.
                     </Typography>
-                    <Button
-                      size="small"
-                      variant="contained"
-                      color="primary"
-                      onClick={handleOpenConfirm}
-                    >
-                      Record Delivery Now
-                    </Button>
                   </Box>
                 )}
               </CardContent>
@@ -486,104 +461,77 @@ export default function DeliveryChallanDetails({ challan: initialChallan, onBack
         </Grid>
       </Grid>
 
-      {/* Record Delivery Dialog */}
-      <Dialog open={confirmOpen} onClose={() => setConfirmOpen(false)} maxWidth="sm" fullWidth>
-        <DialogTitle sx={{ fontWeight: 'bold' }}>
-          Record Delivery Confirmation
-        </DialogTitle>
-        <DialogContent dividers>
-          <Grid container spacing={2}>
-            {dialogError && (
-              <Grid size={{ xs: 12 }}>
-                <Typography color="error" variant="body2" sx={{ fontWeight: 'bold' }}>
-                  {dialogError}
-                </Typography>
-              </Grid>
-            )}
-
-            <Grid size={{ xs: 12, sm: 6 }}>
-              <TextField
-                select
-                fullWidth
-                label="Delivery Status"
-                value={deliveryStatus}
-                onChange={(e) => setDeliveryStatus(e.target.value as DeliveryStatus)}
-              >
-                <MenuItem value="Delivered">Delivered (Fully)</MenuItem>
-                <MenuItem value="Partially Delivered">Partially Delivered</MenuItem>
-                <MenuItem value="Failed">Failed</MenuItem>
-                <MenuItem value="Returned">Returned</MenuItem>
-              </TextField>
-            </Grid>
-
-            <Grid size={{ xs: 12, sm: 6 }}>
-              <TextField
-                fullWidth
-                type="date"
-                label="Delivered Date"
-                value={deliveredDate}
-                onChange={(e) => setDeliveredDate(e.target.value)}
-                slotProps={{ inputLabel: { shrink: true } }}
-              />
-            </Grid>
-
-            <Grid size={{ xs: 12, sm: 6 }}>
-              <TextField
-                fullWidth
-                label="Receiver Name"
-                value={receiverName}
-                onChange={(e) => setReceiverName(e.target.value)}
-                placeholder="Person who signed"
-              />
-            </Grid>
-
-            <Grid size={{ xs: 12, sm: 6 }}>
-              <TextField
-                fullWidth
-                label="Receiver Mobile"
-                value={receiverMobile}
-                onChange={(e) => setReceiverMobile(e.target.value)}
-              />
-            </Grid>
-
-            <Grid size={{ xs: 12, sm: 6 }}>
-              <TextField
-                fullWidth
-                type="number"
-                label="Delivered Quantity"
-                value={deliveredQuantity}
-                onChange={(e) => setDeliveredQuantity(Math.max(0, parseInt(e.target.value) || 0))}
-                helperText={`Max possible: ${challan.dispatchQuantity.toLocaleString()}`}
-              />
-            </Grid>
-
-            <Grid size={{ xs: 12, sm: 6 }}>
-              <TextField
-                fullWidth
-                label="POD / Ref ID (e.g. Sign Sheet #)"
-                value={proofOfDeliveryRef}
-                onChange={(e) => setProofOfDeliveryRef(e.target.value)}
-              />
-            </Grid>
-
-            <Grid size={{ xs: 12 }}>
-              <TextField
-                fullWidth
-                multiline
-                rows={2}
-                label="Delivery Remarks"
-                value={deliveryRemarks}
-                onChange={(e) => setDeliveryRemarks(e.target.value)}
-              />
-            </Grid>
-          </Grid>
+      {/* Update Tracking Dialog */}
+      <Dialog open={trackingOpen} onClose={() => setTrackingOpen(false)} fullWidth maxWidth="xs">
+        <DialogTitle>Update Tracking — {challan.challanNumber}</DialogTitle>
+        <DialogContent sx={{ pt: 1 }}>
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3, mt: 1 }}>
+            <TextField
+              select
+              fullWidth
+              label="Next Status"
+              value={nextStatus}
+              onChange={(e) => setNextStatus(e.target.value as DeliveryTrackingStatus)}
+            >
+              <MenuItem value="In Transit">In Transit</MenuItem>
+              <MenuItem value="Out for Delivery">Out for Delivery</MenuItem>
+              <MenuItem value="Held at Hub">Held at Hub</MenuItem>
+              <MenuItem value="Returned">Returned</MenuItem>
+              <MenuItem value="Cancelled">Cancelled</MenuItem>
+            </TextField>
+            <TextField
+              fullWidth
+              multiline
+              rows={3}
+              label="Update Remarks"
+              value={trackingRemarks}
+              onChange={(e) => setTrackingRemarks(e.target.value)}
+            />
+          </Box>
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setConfirmOpen(false)} variant="outlined">
-            Cancel
+          <Button onClick={() => setTrackingOpen(false)}>Cancel</Button>
+          <Button 
+            variant="contained" 
+            onClick={handleUpdateTracking} 
+            disabled={updating || !nextStatus}
+          >
+            Update Status
           </Button>
-          <Button onClick={handleSaveConfirm} variant="contained" disabled={confirmSaving}>
-            {confirmSaving ? 'Recording...' : 'Record Confirm'}
+        </DialogActions>
+      </Dialog>
+
+      {/* POD Confirmation Dialog */}
+      <Dialog open={podOpen} onClose={() => setPodOpen(false)} fullWidth maxWidth="xs">
+        <DialogTitle>Confirm Delivery (POD) — {challan.challanNumber}</DialogTitle>
+        <DialogContent sx={{ pt: 1 }}>
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3, mt: 1 }}>
+            <TextField
+              fullWidth
+              label="Received By (Name)"
+              value={receivedBy}
+              onChange={(e) => setReceivedBy(e.target.value)}
+              required
+            />
+            <TextField
+              fullWidth
+              multiline
+              rows={2}
+              label="Remarks / POD Notes"
+              value={podRemarks}
+              onChange={(e) => setPodRemarks(e.target.value)}
+            />
+          </Box>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setPodOpen(false)}>Cancel</Button>
+          <Button 
+            variant="contained" 
+            color="success" 
+            onClick={handleConfirmDelivery} 
+            disabled={updating || !receivedBy}
+          >
+            Confirm Delivery
           </Button>
         </DialogActions>
       </Dialog>

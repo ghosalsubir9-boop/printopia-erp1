@@ -106,6 +106,14 @@ export class PaperIssueApiService {
       throw new Error('Unauthorized: Only COMPANY_ADMIN or SUPER_ADMIN can issue paper.');
     }
 
+    // 1.1 Lock check for Completed/Cancelled Job Cards
+    const { JobCardApiService } = await import('./jobCardApi');
+    const allJobCards = await JobCardApiService.getJobCards().catch(() => []);
+    const jobCard = allJobCards.find(jc => jc.poId === slip.poId);
+    if (jobCard && (jobCard.status === 'Completed' || jobCard.status === 'Cancelled')) {
+      throw new Error(`Cannot issue paper. Job Card status is '${jobCard.status}' and is locked.`);
+    }
+
     // 2. Remove fake customer fallback
     if (!slip.customerId || slip.customerId.trim() === '' || slip.customerId === 'CUST-001') {
       throw new Error('A valid customer identifier is required. Fake customer fallbacks are not permitted.');

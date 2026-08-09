@@ -146,11 +146,9 @@ export default function JobProductionDetails({
       setApprovedQCQty(approved);
 
       // 2. Previously Dispatched Qty
-      const disps = await DispatchApiService.getDispatchesByJobItem(job.poId, job.id);
-      const activeDisps = disps.filter(d => d.status !== 'Cancelled');
-      const totalDisp = activeDisps.reduce((sum, d) => sum + d.currentDispatchQuantity, 0);
-      setPreviouslyDispatchedQty(totalDisp);
-      setDispatchHistory(disps);
+      const { totalDispatched, history } = await DispatchApiService.getDispatchSummary(job.poId, job.id);
+      setPreviouslyDispatchedQty(totalDispatched);
+      setDispatchHistory(history);
     } catch (err: unknown) {
       console.error('Failed to load dispatch data:', err);
     } finally {
@@ -803,12 +801,16 @@ export default function JobProductionDetails({
                   </TableRow>
                 </TableHead>
                 <TableBody>
-                  {dispatchHistory.map((item) => (
-                    <TableRow key={item.id} hover>
-                      <TableCell sx={{ fontWeight: 'bold' }}>{item.dispatchNumber}</TableCell>
-                      <TableCell>{item.dispatchDate}</TableCell>
-                      <TableCell align="right" sx={{ color: 'primary.main', fontWeight: 'bold' }}>{item.currentDispatchQuantity.toLocaleString()}</TableCell>
-                      <TableCell>{item.transportMode}</TableCell>
+                    {dispatchHistory.map((item) => {
+                      const itemInDispatch = item.items.find(i => i.productionOrderId === job.poId && i.jobItemId === job.id);
+                      return (
+                        <TableRow key={item.id} hover>
+                          <TableCell sx={{ fontWeight: 'bold' }}>{item.dispatchNumber}</TableCell>
+                          <TableCell>{item.dispatchDate}</TableCell>
+                          <TableCell align="right" sx={{ color: 'primary.main', fontWeight: 'bold' }}>
+                            {itemInDispatch?.currentDispatchQuantity.toLocaleString() || '0'}
+                          </TableCell>
+                          <TableCell>{item.transportMode}</TableCell>
                       <TableCell>{item.vehicleNumber || '—'}</TableCell>
                       <TableCell>{item.transporterName || '—'}</TableCell>
                       <TableCell>
@@ -816,9 +818,11 @@ export default function JobProductionDetails({
                           label={item.status}
                           size="small"
                           color={
-                            item.status === 'Fully Dispatched' || item.status === 'Delivered'
+                            item.status === 'Delivered'
                               ? 'success'
-                              : item.status === 'Partially Dispatched'
+                              : item.status === 'Confirmed'
+                              ? 'primary'
+                              : item.status === 'In Transit'
                               ? 'info'
                               : item.status === 'Cancelled'
                               ? 'error'
@@ -831,8 +835,9 @@ export default function JobProductionDetails({
                         {item.remarks || '—'}
                       </TableCell>
                     </TableRow>
-                  ))}
-                </TableBody>
+                  );
+                })}
+              </TableBody>
               </Table>
             </TableContainer>
           )}
